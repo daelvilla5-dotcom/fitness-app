@@ -1,87 +1,131 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 function BarcodeScanner({ onProductFound, onClose }) {
+  const [mode, setMode] = useState('choice') // 'choice' | 'camera' | 'upload'
   const [scanning, setScanning] = useState(false)
-  const [error, setError] = useState('')
   const [searching, setSearching] = useState(false)
+  const [error, setError] = useState('')
   const scannerRef = useRef(null)
   const html5QrCodeRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     return () => {
-      // Cleanup: ferma la fotocamera quando il componente viene smontato
       if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.stop().catch(err => console.log('Cleanup error:', err))
+        html5QrCodeRef.current.stop().catch(() => {})
+        html5QrCodeRef.current.clear()
       }
     }
   }, [])
 
-  const startScanner = async () => {
+  const startCamera = async () => {
     setError('')
+    setMode('camera')
     setScanning(true)
 
     try {
       const html5QrCode = new Html5Qrcode("barcode-reader")
       html5QrCodeRef.current = html5QrCode
 
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 150 },
-        aspectRatio: 1.0,
+      const devices = await Html5Qrcode.getCameras()
+      
+      if (!devices || devices.length === 0) {
+        setError('Nessuna fotocamera trovata sul dispositivo.')
+        setScanning(false)
+        return
       }
 
+      // Cerca la fotocamera posteriore, altrimenti usa la prima disponibile
+      const rearCamera = devices.find(d => 
+        d.label.toLowerCase().includes('back') || 
+        d.label.toLowerCase().includes('rear') ||
+        d.label.toLowerCase().includes('environment')
+      ) || devices[devices.length - 1]
+
       await html5QrCode.start(
-        { facingMode: "environment" }, // Usa la fotocamera posteriore
-        config,
+        rearCamera.id,
+        {
+          fps: 10,
+          qrbox: { width: 280, height: 150 },
+          aspectRatio: 1.5,
+        },
         onScanSuccess,
-        onScanFailure
+        () => {} // onScanFailure - silenzioso
       )
     } catch (err) {
-      console.error('Errore scanner:', err)
-      setError('Impossibile accedere alla fotocamera. Controlla i permessi.')
+      console.error('Errore fotocamera:', err)
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Permesso fotocamera negato. Abilitalo dalle impostazioni del browser.')
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setError('Nessuna fotocamera trovata.')
+      } else {
+        setError('Errore nell\'accesso alla fotocamera. Prova con l\'upload dell\'immagine.')
+      }
       setScanning(false)
     }
   }
 
-  const stopScanner = async () => {
+  const stopCamera = async () => {
     if (html5QrCodeRef.current) {
       try {
         await html5QrCodeRef.current.stop()
-      } catch (err) {
-        console.log('Stop error:', err)
-      }
+        html5QrCodeRef.current.clear()
+      } catch (err) {}
     }
     setScanning(false)
+    setMode('choice')
   }
 
   const onScanSuccess = async (decodedText) => {
-    // Ferma lo scanner dopo aver letto il codice
-    await stopScanner()
-    
+    await stopCamera()
+    await lookupProduct(decodedText)
+  }
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
     setSearching(true)
     setError('')
 
     try {
-      // Chiamata all'API di OpenFoodFacts
+      const html5QrCode = new Html5Qrcode("barcode-reader-hidden")
+      const decodedText = await html5QrCode.scanFile(file, true)
+      
+      if (decodedText) {
+        await lookupProduct(decodedText)
+      } else {
+        setError('Nessun codice a barre trovato nell\'immagine. Prova con un\'immagine più nitida del codice.')
+        setSearching(false)
+      }
+    } catch (err) {
+      console.error('Errore scan file:', err)
+      setError('Impossibile leggere il codice a barre dall\'immagine.')
+      setSearching(false)
+    }
+  }
+
+  const lookupProduct = async (barcode) => {
+    setSearching(true)
+    setError('')
+
+    try {
       const response = await fetch(
-        `https://world.openfoodfacts.org/api/v2/product/${decodedText}.json`
+        `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`
       )
       const data = await response.json()
 
       if (data.status === 1 && data.product) {
         const product = data.product
-        
-        // Estrai i dati nutrizionali per 100g
         const nutriments = product.nutriments || {}
         
-        // OpenFoodFacts restituisce i valori in varie unità, normalizziamo
         const calories = nutriments['energy-kcal_100g'] || 
                         (nutriments['energy_100g'] ? Math.round(nutriments['energy_100g'] / 4.184) : null)
         
         const nutritionData = {
           name: product.product_name || 'Prodotto sconosciuto',
-          barcode: decodedText,
+          barcode: barcode,
           calories: calories ? Math.round(calories) : 0,
           pro: nutriments.proteins_100g || 0,
           carb: nutriments.carbohydrates_100g || 0,
@@ -91,30 +135,26 @@ function BarcodeScanner({ onProductFound, onClose }) {
 
         onProductFound(nutritionData)
       } else {
-        setError(`Codice a barre trovato: ${decodedText}\nMa il prodotto non è nel database OpenFoodFacts.`)
+        setError(`Codice trovato: ${barcode}\nProdotto non presente nel database OpenFoodFacts.\nProva con un altro prodotto o inserisci manualmente.`)
+        setSearching(false)
       }
     } catch (err) {
       console.error('Errore API:', err)
-      setError('Errore durante la ricerca del prodotto. Riprova.')
-    } finally {
+      setError('Errore di connessione. Controlla la rete e riprova.')
       setSearching(false)
     }
-  }
-
-  const onScanFailure = (error) => {
-    // Silenzioso: continua a scansionare
   }
 
   const handleManualInput = () => {
     const barcode = prompt('Inserisci il codice a barre (13 cifre):')
     if (barcode && barcode.trim()) {
-      onScanSuccess(barcode.trim())
+      lookupProduct(barcode.trim())
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md">
+      <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-electric">📷 Scanner Codice a Barre</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">
@@ -123,30 +163,80 @@ function BarcodeScanner({ onProductFound, onClose }) {
         </div>
 
         <div className="space-y-4">
-          {/* Area scanner */}
-          <div className="bg-gray-900 rounded-lg overflow-hidden border border-border">
-            {scanning ? (
-              <div id="barcode-reader" className="w-full"></div>
-            ) : (
-              <div className="p-8 text-center">
+          {/* Scelta modalità */}
+          {mode === 'choice' && !searching && (
+            <>
+              <div className="bg-gray-900 rounded-lg p-6 text-center border border-border">
                 <p className="text-6xl mb-4">📷</p>
-                <p className="text-gray-400 mb-4">
-                  La fotocamera si aprirà per inquadrare il codice a barre
+                <p className="text-gray-400 mb-4 text-sm">
+                  Scegli come acquisire il codice a barre
                 </p>
-                <button
-                  onClick={startScanner}
-                  className="bg-electric text-black font-bold px-6 py-3 rounded-lg active:scale-95 transition-transform"
-                >
-                  Avvia Fotocamera
-                </button>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={startCamera}
+                    className="w-full bg-electric text-black font-bold py-3 rounded-lg active:scale-95 transition-transform"
+                  >
+                    📸 Usa Fotocamera
+                  </button>
+                  
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full bg-gray-800 border border-border text-white py-3 rounded-lg hover:border-electric transition-colors"
+                  >
+                    🖼️ Carica Immagine
+                  </button>
+                  
+                  <button
+                    onClick={handleManualInput}
+                    className="w-full bg-gray-800 border border-border text-white py-3 rounded-lg hover:border-electric transition-colors"
+                  >
+                    ✏️ Inserisci Codice Manualmente
+                  </button>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
               </div>
-            )}
-          </div>
+
+              <p className="text-xs text-gray-500 text-center">
+                💡 I dati verranno presi dal database OpenFoodFacts
+              </p>
+            </>
+          )}
+
+          {/* Modalità fotocamera */}
+          {mode === 'camera' && (
+            <div className="space-y-3">
+              <div className="bg-gray-900 rounded-lg overflow-hidden border border-border">
+                <div id="barcode-reader" className="w-full min-h-[300px]"></div>
+              </div>
+              
+              <button
+                onClick={stopCamera}
+                className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
+              >
+                ✕ Ferma Fotocamera
+              </button>
+            </div>
+          )}
+
+          {/* Div nascosto per scan da file */}
+          <div id="barcode-reader-hidden" className="hidden"></div>
 
           {/* Stato ricerca */}
           {searching && (
-            <div className="bg-electric/10 border border-electric rounded-lg p-3 text-center">
-              <p className="text-electric font-semibold">🔍 Ricerca prodotto in corso...</p>
+            <div className="bg-electric/10 border border-electric rounded-lg p-4 text-center">
+              <p className="text-electric font-semibold mb-2">🔍 Ricerca prodotto...</p>
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="bg-electric h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+              </div>
             </div>
           )}
 
@@ -154,21 +244,16 @@ function BarcodeScanner({ onProductFound, onClose }) {
           {error && (
             <div className="bg-red-500/10 border border-red-500 rounded-lg p-3">
               <p className="text-red-400 text-sm whitespace-pre-wrap">{error}</p>
+              {mode === 'camera' && (
+                <button
+                  onClick={() => { setMode('choice'); setError(''); }}
+                  className="mt-2 text-xs text-electric underline"
+                >
+                  Torna alla scelta modalità
+                </button>
+              )}
             </div>
           )}
-
-          {/* Input manuale */}
-          <button
-            onClick={handleManualInput}
-            disabled={scanning}
-            className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg text-sm hover:border-electric transition-colors disabled:opacity-50"
-          >
-            ✏️ Inserisci codice manualmente
-          </button>
-
-          <p className="text-xs text-gray-500 text-center">
-            💡 Inquadra il codice a barre del prodotto. I dati verranno presi dal database OpenFoodFacts.
-          </p>
         </div>
       </div>
     </div>
