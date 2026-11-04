@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import OCRScanner from './OCRScanner'
+import BarcodeScanner from './BarcodeScanner'
 
 function AddFoodModal({ onSave, onClose, editFood = null }) {
   const [showOCR, setShowOCR] = useState(false)
+  const [showBarcode, setShowBarcode] = useState(false)
   const [food, setFood] = useState(editFood || {
     name: '',
     calories: 0,
@@ -60,6 +62,19 @@ useEffect(() => {
   setShowOCR(false)
 }
 
+const handleBarcodeProduct = (productData) => {
+  setFood({
+    ...food,
+    name: productData.name,
+    calories: productData.calories,
+    pro: productData.pro,
+    carb: productData.carb,
+    gra: productData.gra,
+    fib: productData.fib,
+  })
+  setShowBarcode(false)
+}
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -74,13 +89,23 @@ useEffect(() => {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           {/* Pulsante OCR */}
-<button
-  type="button"
-  onClick={() => setShowOCR(true)}
-  className="w-full bg-gray-800 border border-electric text-electric font-semibold py-3 rounded-lg mb-3 hover:bg-electric/10 transition-colors"
->
-  📷 Scansiona etichetta nutrizionale
-</button>
+{/* Pulsanti scanner */}
+<div className="grid grid-cols-2 gap-2 mb-3">
+  <button
+    type="button"
+    onClick={() => setShowBarcode(true)}
+    className="bg-gray-800 border border-electric text-electric font-semibold py-3 rounded-lg hover:bg-electric/10 transition-colors text-sm"
+  >
+    📷 Codice a Barre
+  </button>
+  <button
+    type="button"
+    onClick={() => setShowOCR(true)}
+    className="bg-gray-800 border border-electric text-electric font-semibold py-3 rounded-lg hover:bg-electric/10 transition-colors text-sm"
+  >
+    🏷️ Etichetta (OCR)
+  </button>
+</div>
           <div>
             <label className="text-sm text-gray-400 mb-1 block">Nome</label>
             <input
@@ -164,7 +189,14 @@ useEffect(() => {
           </button>
         </form>
       </div>
-      {showOCR && (
+      {showBarcode && (
+  <BarcodeScanner
+    onProductFound={handleBarcodeProduct}
+    onClose={() => setShowBarcode(false)}
+  />
+)}
+
+{showOCR && (
   <OCRScanner
     onExtract={handleOCRExtract}
     onClose={() => setShowOCR(false)}
