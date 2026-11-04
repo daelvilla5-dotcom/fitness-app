@@ -2,11 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 function BarcodeScanner({ onProductFound, onClose }) {
-  const [mode, setMode] = useState('choice') // 'choice' | 'camera' | 'upload'
+  const [mode, setMode] = useState('choice')
   const [scanning, setScanning] = useState(false)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
-  const scannerRef = useRef(null)
   const html5QrCodeRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -25,18 +24,26 @@ function BarcodeScanner({ onProductFound, onClose }) {
     setScanning(true)
 
     try {
+      // Richiedi prima i permessi in modo esplicito
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' } 
+      })
+      
+      // Ferma lo stream subito, ci serve solo per ottenere il permesso
+      stream.getTracks().forEach(track => track.stop())
+
       const html5QrCode = new Html5Qrcode("barcode-reader")
       html5QrCodeRef.current = html5QrCode
 
       const devices = await Html5Qrcode.getCameras()
       
       if (!devices || devices.length === 0) {
-        setError('Nessuna fotocamera trovata sul dispositivo.')
+        setError('Nessuna fotocamera trovata.')
         setScanning(false)
+        setMode('choice')
         return
       }
 
-      // Cerca la fotocamera posteriore, altrimenti usa la prima disponibile
       const rearCamera = devices.find(d => 
         d.label.toLowerCase().includes('back') || 
         d.label.toLowerCase().includes('rear') ||
@@ -51,18 +58,25 @@ function BarcodeScanner({ onProductFound, onClose }) {
           aspectRatio: 1.5,
         },
         onScanSuccess,
-        () => {} // onScanFailure - silenzioso
+        () => {}
       )
     } catch (err) {
       console.error('Errore fotocamera:', err)
+      let msg = 'Errore nell\'accesso alla fotocamera.'
+      
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Permesso fotocamera negato. Abilitalo dalle impostazioni del browser.')
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setError('Nessuna fotocamera trovata.')
-      } else {
-        setError('Errore nell\'accesso alla fotocamera. Prova con l\'upload dell\'immagine.')
+        msg = 'Permesso fotocamera negato.\n\nPer abilitarlo:\n• Android: Impostazioni → App → Browser → Permessi → Fotocamera\n• Chrome: clicca l\'icona 🔒 nella barra indirizzi'
+      } else if (err.name === 'NotFoundError') {
+        msg = 'Nessuna fotocamera trovata sul dispositivo.'
+      } else if (err.name === 'NotReadableError') {
+        msg = 'Fotocamera occupata da un\'altra app. Chiudila e riprova.'
+      } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        msg = 'La fotocamera richiede HTTPS. Usa l\'opzione "Carica Immagine" o "Inserisci Manualmente".'
       }
+      
+      setError(msg)
       setScanning(false)
+      setMode('choice')
     }
   }
 
@@ -96,7 +110,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
       if (decodedText) {
         await lookupProduct(decodedText)
       } else {
-        setError('Nessun codice a barre trovato nell\'immagine. Prova con un\'immagine più nitida del codice.')
+        setError('Nessun codice a barre trovato nell\'immagine.\nProva con un\'immagine più nitida del codice.')
         setSearching(false)
       }
     } catch (err) {
@@ -104,6 +118,9 @@ function BarcodeScanner({ onProductFound, onClose }) {
       setError('Impossibile leggere il codice a barre dall\'immagine.')
       setSearching(false)
     }
+    
+    // Resetta l'input per poter caricare la stessa immagine due volte
+    e.target.value = ''
   }
 
   const lookupProduct = async (barcode) => {
@@ -177,14 +194,14 @@ function BarcodeScanner({ onProductFound, onClose }) {
                     onClick={startCamera}
                     className="w-full bg-electric text-black font-bold py-3 rounded-lg active:scale-95 transition-transform"
                   >
-                    📸 Usa Fotocamera
+                    📸 Usa Fotocamera (live)
                   </button>
                   
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="w-full bg-gray-800 border border-border text-white py-3 rounded-lg hover:border-electric transition-colors"
                   >
-                    🖼️ Carica Immagine
+                    🖼️ Carica Immagine (galleria)
                   </button>
                   
                   <button
@@ -195,11 +212,11 @@ function BarcodeScanner({ onProductFound, onClose }) {
                   </button>
                 </div>
 
+                {/* FIX: rimosso capture="environment" per permettere la scelta galleria/fotocamera */}
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={handleImageUpload}
                   className="hidden"
                 />
@@ -227,10 +244,8 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </div>
           )}
 
-          {/* Div nascosto per scan da file */}
           <div id="barcode-reader-hidden" className="hidden"></div>
 
-          {/* Stato ricerca */}
           {searching && (
             <div className="bg-electric/10 border border-electric rounded-lg p-4 text-center">
               <p className="text-electric font-semibold mb-2">🔍 Ricerca prodotto...</p>
@@ -240,18 +255,9 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </div>
           )}
 
-          {/* Errore */}
           {error && (
             <div className="bg-red-500/10 border border-red-500 rounded-lg p-3">
               <p className="text-red-400 text-sm whitespace-pre-wrap">{error}</p>
-              {mode === 'camera' && (
-                <button
-                  onClick={() => { setMode('choice'); setError(''); }}
-                  className="mt-2 text-xs text-electric underline"
-                >
-                  Torna alla scelta modalità
-                </button>
-              )}
             </div>
           )}
         </div>
