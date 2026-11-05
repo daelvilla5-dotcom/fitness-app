@@ -574,32 +574,52 @@ export async function loadActiveDailyLog(userId) {
 
 // Salva o aggiorna il giorno corrente (Upsert)
 export async function saveDailyLog(userId, logData) {
+  console.log('🔵 [saveDailyLog] userId:', userId)
+  console.log(' [saveDailyLog] logData:', logData)
+  
+  if (!userId) {
+    console.error('❌ userId è undefined o null!')
+    throw new Error('userId non valido')
+  }
+  
   try {
-    // Controlla se esiste già un log per questa data
-    const { data: existing } = await supabase
+    // Controlla se esiste già
+    const { data: existing, error: selectError } = await supabase
       .from('daily_logs')
       .select('id')
       .eq('user_id', userId)
       .eq('start_date', logData.start_date)
       .single()
 
+    if (selectError && selectError.code !== 'PGRST116') {
+      console.error('Errore nella query SELECT:', selectError)
+      throw selectError
+    }
+
     if (existing) {
       // Aggiorna
+      console.log('🔄 Aggiorno daily_log esistente:', existing.id)
       const { data, error } = await supabase
         .from('daily_logs')
         .update({
-          entries: logData.entries,
+          end_date: logData.end_date,
           is_active: logData.is_active,
-          end_date: logData.end_date
+          entries: logData.entries
         })
         .eq('id', existing.id)
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Errore UPDATE:', error)
+        throw error
+      }
+      
+      console.log('✅ Daily log aggiornato:', data)
       return data
     } else {
-      // Inserisci nuovo
+      // Crea nuovo
+      console.log('➕ Creo nuovo daily_log')
       const { data, error } = await supabase
         .from('daily_logs')
         .insert({
@@ -612,11 +632,16 @@ export async function saveDailyLog(userId, logData) {
         .select()
         .single()
 
-      if (error) throw error
+      if (error) {
+        console.error('Errore INSERT:', error)
+        throw error
+      }
+      
+      console.log('✅ Daily log creato:', data)
       return data
     }
   } catch (err) {
-    console.error('Errore salvataggio diario:', err)
+    console.error('❌ Errore CRITICO in saveDailyLog:', err)
     throw err
   }
 }
