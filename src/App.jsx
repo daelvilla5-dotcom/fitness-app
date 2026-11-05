@@ -11,53 +11,83 @@ import { migrateLocalStorageToSupabase } from './utils/migrateData'
 import ConnectionStatus from './components/ConnectionStatus'
 import { syncPendingOperations } from './utils/syncService'
 
+// Chiave per salvare l'utente approvato in localStorage
+const APPROVED_USER_KEY = 'fitness_app_approved_user'
+
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Controlla se c'è una sessione attiva all'avvio
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session) {
-        // Se offline, mantieni l'utente loggato comunque
-        if (!navigator.onLine) {
-          console.log('📡 Offline: mantieni sessione locale')
-          setUser(session.user)
-        } else {
-          // Se online, verifica l'approvazione
-          const { data: approvedUser } = await supabase
-            .from('approved_users')
-            .select('*')
-            .eq('email', session.user.email)
-            .eq('attivo', true)
-            .maybeSingle()
+    let isMounted = true
 
-          if (approvedUser) {
-            setUser(session.user)
-            migrateLocalStorageToSupabase(session.user)
-            syncPendingOperations(session.user)
-          } else {
-            await supabase.auth.signOut()
-            setUser(null)
+    const initApp = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      // Se offline, usa il fallback da localStorage
+      if (!navigator.onLine) {
+        console.log('📡 Offline: controllo fallback locale')
+        const savedUser = localStorage.getItem(APPROVED_USER_KEY)
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser)
+            console.log('✅ Utente ripristinato da localStorage:', parsed.email)
+            if (isMounted) setUser(parsed)
+          } catch (e) {
+            console.error('Errore parsing utente salvato:', e)
           }
+        } else {
+          console.log('⚠️ Nessun utente salvato in locale, serve login online')
+        }
+        if (isMounted) setLoading(false)
+        return
+      }
+      
+      // Se online, comportamento normale
+      if (session) {
+        const { data: approvedUser } = await supabase
+          .from('approved_users')
+          .select('*')
+          .eq('email', session.user.email)
+          .eq('attivo', true)
+          .maybeSingle()
+
+        if (approvedUser) {
+          // Salva l'utente in localStorage per uso offline futuro
+          localStorage.setItem(APPROVED_USER_KEY, JSON.stringify(session.user))
+          if (isMounted) setUser(session.user)
+          migrateLocalStorageToSupabase(session.user)
+          syncPendingOperations(session.user)
+        } else {
+          await supabase.auth.signOut()
+          localStorage.removeItem(APPROVED_USER_KEY)
+          if (isMounted) setUser(null)
         }
       }
-      setLoading(false)
-    })
+      if (isMounted) setLoading(false)
+    }
 
-    // Ascolta i cambiamenti di stato auth (login/logout)
+    initApp()
+
+    // Ascolta i cambiamenti di stato auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event)
         
+        if (event === 'SIGNED_OUT') {
+          if (isMounted) {
+            setUser(null)
+            localStorage.removeItem(APPROVED_USER_KEY)
+          }
+          return
+        }
+        
         if (session) {
-          // LOGIN o TOKEN_REFRESHED
           if (!navigator.onLine) {
-            // Se offline, mantieni comunque l'utente loggato
             console.log('📡 Offline: mantieni sessione locale')
-            setUser(session.user)
+            localStorage.setItem(APPROVED_USER_KEY, JSON.stringify(session.user))
+            if (isMounted) setUser(session.user)
           } else {
-            // Se online, verifica l'approvazione
             const { data: approvedUser } = await supabase
               .from('approved_users')
               .select('*')
@@ -66,28 +96,15 @@ function App() {
               .maybeSingle()
 
             if (approvedUser) {
-              setUser(session.user)
+              localStorage.setItem(APPROVED_USER_KEY, JSON.stringify(session.user))
+              if (isMounted) setUser(session.user)
               migrateLocalStorageToSupabase(session.user)
-              
-              // Sincronizza operazioni offline pending al login
-              syncPendingOperations(session.user).then(result => {
-                if (result.success > 0) {
-                  console.log(`🔄 Sincronizzate ${result.success} operazioni offline al login`)
-                }
-              })
+              syncPendingOperations(session.user)
             } else {
               await supabase.auth.signOut()
-              setUser(null)
+              localStorage.removeItem(APPROVED_USER_KEY)
+              if (isMounted) setUser(null)
             }
-          }
-        } else {
-          // LOGOUT
-          // Non fare logout se siamo offline (potrebbe essere un errore di rete)
-          if (navigator.onLine) {
-            setUser(null)
-          } else {
-            console.log(' Offline: ignora logout automatico')
-            // Mantieni l'utente loggato localmente
           }
         }
       }
@@ -97,8 +114,8 @@ function App() {
     const handleOnline = async () => {
       console.log('🌐 Connessione ripristinata, verifico sessione...')
       const { data: { session } } = await supabase.auth.getSession()
-      if (session && user) {
-        // Verifica che l'utente sia ancora approvato
+      
+      if (session) {
         const { data: approvedUser } = await supabase
           .from('approved_users')
           .select('*')
@@ -107,15 +124,24 @@ function App() {
           .maybeSingle()
 
         if (approvedUser) {
-          console.log('✅ Sessione valida, sincronizzo...')
+          localStorage.setItem(APPROVED_USER_KEY, JSON.stringify(session.user))
+          if (isMounted) setUser(session.user)
           const result = await syncPendingOperations(session.user)
           if (result.success > 0) {
             console.log(`✅ Sincronizzate con successo ${result.success} operazioni`)
           }
         } else {
-          // Utente non più approvato
           await supabase.auth.signOut()
-          setUser(null)
+          localStorage.removeItem(APPROVED_USER_KEY)
+          if (isMounted) setUser(null)
+        }
+      } else {
+        // Nessun session, controlla localStorage
+        const savedUser = localStorage.getItem(APPROVED_USER_KEY)
+        if (savedUser) {
+          try {
+            if (isMounted) setUser(JSON.parse(savedUser))
+          } catch (e) {}
         }
       }
     }
@@ -124,10 +150,11 @@ function App() {
 
     // Cleanup
     return () => {
+      isMounted = false
       subscription.unsubscribe()
       window.removeEventListener('online', handleOnline)
     }
-  }, [user])
+  }, []) // ← RIMOSSO [user] per evitare loop
 
   if (loading) {
     return (
@@ -150,7 +177,6 @@ function App() {
           </h1>
         </header>
         
-        {/* Indicatore di stato connessione */}
         <ConnectionStatus />
 
         <main>
