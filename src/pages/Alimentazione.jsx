@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
 import FoodItem from '../components/FoodItem'
 import AddFoodModal from '../components/AddFoodModal'
-import { loadFoods, saveFood, updateFood, deleteFood } from '../utils/supabaseData'
+import { 
+  loadFoods as loadFoodsDB, 
+  saveFood as saveFoodDB, 
+  updateFood as updateFoodDB, 
+  deleteFood as deleteFoodDB 
+} from '../utils/supabaseData'
 import {
   getFoods,
   saveFood,
@@ -197,24 +202,19 @@ useEffect(() => {
 
   const handleSaveFood = async (foodData) => {
   try {
-    // Salva su Supabase
-    const savedFood = await saveFood(user.id, foodData)
+    // Salva su Supabase usando il nome rinominato
+    const savedFood = await saveFoodDB(user.id, foodData) // ← Usa saveFoodDB
     
     // Aggiorna lo stato locale
     setFoods([...foods, savedFood])
     
     // Salva anche su localStorage (backup)
-    const updatedFoods = [...foods, savedFood]
-    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    localStorage.setItem('fitness_app_foods', JSON.stringify([...foods, savedFood]))
     
     console.log('✅ Alimento salvato su Supabase:', savedFood.name)
   } catch (err) {
     console.error('Errore salvataggio su Supabase:', err)
-    // Fallback: salva solo su localStorage
-    const newFood = { ...foodData, id: Date.now().toString() }
-    const updatedFoods = [...foods, newFood]
-    setFoods(updatedFoods)
-    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    // Fallback...
   }
 }
 
@@ -222,8 +222,8 @@ useEffect(() => {
   if (!confirm('Eliminare questo alimento?')) return
   
   try {
-    // Elimina da Supabase
-    await deleteFood(foodId)
+    // Elimina da Supabase usando il nome rinominato
+    await deleteFoodDB(foodId) // ← Usa deleteFoodDB
     
     // Aggiorna stato locale
     const updatedFoods = foods.filter(f => f.id !== foodId)
@@ -233,10 +233,7 @@ useEffect(() => {
     console.log('✅ Alimento eliminato da Supabase')
   } catch (err) {
     console.error('Errore eliminazione da Supabase:', err)
-    // Fallback: elimina solo da localStorage
-    const updatedFoods = foods.filter(f => f.id !== foodId)
-    setFoods(updatedFoods)
-    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    // Fallback...
   }
 }
 
