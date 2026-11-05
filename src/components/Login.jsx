@@ -39,7 +39,7 @@ function Login({ onLoginSuccess }) {
     }
   }
 
-const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async () => {
   try {
     setLoading(true)
     setError('')
