@@ -12,9 +12,12 @@ function BarcodeScanner({ onProductFound, onClose }) {
 
   useEffect(() => {
     return () => {
-      if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.stop().catch(() => {})
-        html5QrCodeRef.current.clear()
+      // Cleanup robusto allo smontaggio del componente
+      const scanner = html5QrCodeRef.current
+      if (scanner) {
+        scanner.stop().catch(() => {}).finally(() => {
+          scanner.clear().catch(() => {})
+        })
       }
     }
   }, [])
@@ -26,6 +29,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
     setFoundProduct(null)
 
     try {
+      // Richiedi permessi espliciti
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } 
       })
@@ -56,7 +60,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
           aspectRatio: 1.5,
         },
         onScanSuccess,
-        () => {}
+        () => {} // Ignora errori di scansione continua
       )
     } catch (err) {
       console.error('Errore fotocamera:', err)
@@ -75,16 +79,31 @@ function BarcodeScanner({ onProductFound, onClose }) {
     }
   }
 
+  // FIX: Gestione robusta dello stop per evitare l'errore "not running"
   const stopCamera = async () => {
-    if (html5QrCodeRef.current) {
+    const scanner = html5QrCodeRef.current
+    if (scanner) {
       try {
-        await html5QrCodeRef.current.stop()
-        html5QrCodeRef.current.clear()
-      } catch (err) {}
+        await scanner.stop()
+      } catch (err) {
+        // Silenzia l'errore se lo scanner è già fermo
+        if (!err.message?.toLowerCase().includes('not running') && 
+            !err.message?.toLowerCase().includes('not paused')) {
+          console.warn('Errore stop scanner:', err)
+        }
+      } finally {
+        try {
+          scanner.clear()
+        } catch (e) {}
+        html5QrCodeRef.current = null
+      }
     }
   }
 
   const onScanSuccess = async (decodedText) => {
+    // FIX: Evita scansioni multiple simultanee
+    if (searching) return
+    
     setLastScannedCode(decodedText)
     setSearching(true)
     setError('')
@@ -155,7 +174,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
           fib: nutriments.fiber_100g || 0,
         }
 
-        // FIX: ferma la fotocamera PRIMA di mostrare i risultati
+        // Ferma la fotocamera in modo sicuro
         await stopCamera()
         setSearching(false)
         setFoundProduct(nutritionData)
@@ -307,7 +326,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </div>
           )}
 
-          {/* FIX: Prodotto trovato - mostra i dati e pulsante conferma */}
+          {/* Prodotto trovato */}
           {foundProduct && (
             <div className="bg-green-500/10 border border-green-500 rounded-lg p-4">
               <p className="text-green-400 font-semibold mb-3 text-center">✅ Prodotto trovato!</p>
