@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 
-// Stessa chiave usata in App.jsx
 const APPROVED_USER_KEY = 'fitness_app_approved_user'
 
 function Login({ onLoginSuccess }) {
@@ -10,40 +9,36 @@ function Login({ onLoginSuccess }) {
   const [isOffline, setIsOffline] = useState(!navigator.onLine)
 
   useEffect(() => {
-    // Aggiorna lo stato offline/online in tempo reale
     const handleOnline = () => setIsOffline(false)
     const handleOffline = () => setIsOffline(true)
 
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
 
-    // Controlla se c'è già una sessione attiva
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        // Se offline, usa il fallback locale
         if (!navigator.onLine) {
           const savedUser = localStorage.getItem(APPROVED_USER_KEY)
           if (savedUser) {
             try {
               const parsed = JSON.parse(savedUser)
-              console.log('✅ Login offline riuscito con utente salvato:', parsed.email)
+              console.log('Login offline riuscito con utente salvato:', parsed.email)
               onLoginSuccess(parsed)
               return
             } catch (e) {
               console.error('Errore parsing utente salvato:', e)
             }
           }
-          setError('Sei offline e nessun utente è salvato in locale. Connettiti a internet per accedere.')
+          setError('Sei offline e nessun utente e salvato in locale. Connettiti a internet per accedere.')
           return
         }
 
-        // Se online, verifica normalmente
         const isApproved = await checkIfApproved(session.user.email)
         if (isApproved) {
           onLoginSuccess(session.user)
         } else {
           await supabase.auth.signOut()
-          setError('Accesso negato. La tua email non è nella lista approvata.')
+          setError('Accesso negato. La tua email non e nella lista approvata.')
         }
       }
     })
@@ -83,7 +78,6 @@ function Login({ onLoginSuccess }) {
       setLoading(true)
       setError('')
 
-      // URL di reindirizzamento esplicito
       const redirectTo = window.location.hostname.includes('vercel.app')
         ? 'https://fitness-app-chi-bice.vercel.app'
         : 'http://localhost:5173'
@@ -110,7 +104,7 @@ function Login({ onLoginSuccess }) {
       <div className="bg-card border border-border rounded-lg p-8 max-w-md w-full">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-electric mb-2">
-            Fitness App 🏋️
+            Fitness App
           </h1>
           <p className="text-gray-400">
             Accedi per sincronizzare i tuoi dati
@@ -125,7 +119,7 @@ function Login({ onLoginSuccess }) {
 
         {isOffline && !error && (
           <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-3 mb-6">
-            <p className="text-orange-400 text-sm">📡 Sei offline. Connettiti a internet per accedere.</p>
+            <p className="text-orange-400 text-sm">Sei offline. Connettiti a internet per accedere.</p>
           </div>
         )}
 
@@ -165,4 +159,13 @@ function Login({ onLoginSuccess }) {
         </button>
 
         <div className="mt-6 text-center">
-          <p className="
+          <p className="text-xs text-gray-500">
+            Solo gli utenti approvati possono accedere
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Login
