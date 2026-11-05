@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { HashRouter as Router, Routes, Route, useSearchParams } from 'react-router-dom'
+import { HashRouter as Router, Routes, Route } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import Login from './components/Login'
 import Navbar from './components/Navbar'
@@ -19,7 +19,6 @@ function App() {
   const [loading, setLoading] = useState(true)
   
   // Stati per la condivisione/importazione
-  const [searchParams, setSearchParams] = useSearchParams()
   const [importData, setImportData] = useState(null)
   const [importLoading, setImportLoading] = useState(false)
 
@@ -30,7 +29,7 @@ function App() {
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!navigator.onLine) {
-        console.log('📡 Offline: controllo fallback locale')
+        console.log(' Offline: controllo fallback locale')
         const savedUser = localStorage.getItem(APPROVED_USER_KEY)
         if (savedUser) {
           try {
@@ -41,7 +40,7 @@ function App() {
             console.error('Errore parsing utente salvato:', e)
           }
         } else {
-          console.log('⚠️ Nessun utente salvato in locale, serve login online')
+          console.log('️ Nessun utente salvato in locale, serve login online')
         }
         if (isMounted) setLoading(false)
         return
@@ -154,24 +153,31 @@ function App() {
     }
   }, [])
 
-  // useEffect per gestire l'importazione da link condiviso
+  // useEffect per gestire l'importazione da link condiviso (senza useSearchParams)
   useEffect(() => {
-    const shareCode = searchParams.get('importa')
-    if (shareCode && user && !importData) {
-      setImportLoading(true)
-      getRoutineByShareCode(shareCode).then(routine => {
-        if (routine) {
-          setImportData(routine)
-        } else {
-          alert('Scheda non trovata o non più condivisa.')
-          setSearchParams({})
-        }
-        setImportLoading(false)
-      }).catch(() => {
-        setImportLoading(false)
-      })
+    const checkImportCode = () => {
+      const params = new URLSearchParams(window.location.search)
+      const shareCode = params.get('importa')
+      
+      if (shareCode && user && !importData) {
+        setImportLoading(true)
+        getRoutineByShareCode(shareCode).then(routine => {
+          if (routine) {
+            setImportData(routine)
+          } else {
+            alert('Scheda non trovata o non più condivisa.')
+            // Pulisci URL
+            window.history.replaceState({}, '', window.location.pathname)
+          }
+          setImportLoading(false)
+        }).catch(() => {
+          setImportLoading(false)
+        })
+      }
     }
-  }, [searchParams, user, importData])
+
+    checkImportCode()
+  }, [user, importData])
 
   const handleImportRoutine = async () => {
     if (!importData || !user) return
@@ -184,7 +190,8 @@ function App() {
       await saveRoutine(user.id, newRoutine)
       alert('✅ Scheda importata con successo! La trovi nella tab "Schede".')
       setImportData(null)
-      setSearchParams({})
+      // Pulisci URL
+      window.history.replaceState({}, '', window.location.pathname)
     } catch (err) {
       console.error('Errore importazione:', err)
       alert('Errore durante l\'importazione della scheda.')
@@ -237,7 +244,7 @@ function App() {
                 <button
                   onClick={() => {
                     setImportData(null)
-                    setSearchParams({})
+                    window.history.replaceState({}, '', window.location.pathname)
                   }}
                   className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-lg"
                 >
