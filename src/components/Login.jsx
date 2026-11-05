@@ -39,34 +39,32 @@ function Login({ onLoginSuccess }) {
     }
   }
 
-  const handleGoogleLogin = async () => {
-    try {
-      setLoading(true)
-      setError('')
+const handleGoogleLogin = async () => {
+  try {
+    setLoading(true)
+    setError('')
 
-      // Determina l'URL di reindirizzamento in base all'ambiente
-const redirectUrl = window.location.hostname === 'localhost' 
-  ? 'http://localhost:5173' 
-  : window.location.origin
+    // URL di reindirizzamento esplicito
+    const redirectTo = window.location.hostname.includes('vercel.app')
+      ? 'https://fitness-app-chi-bice.vercel.app'
+      : 'http://localhost:5173'
 
-// URL di reindirizzamento esplicito
-const redirectTo = window.location.hostname.includes('vercel.app')
-  ? 'https://fitness-app-chi-bice.vercel.app'
-  : 'http://localhost:5173'
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectTo,
+      },
+    })
 
-const { error } = await supabase.auth.signInWithOAuth({
-  provider: 'google',
-  options: {
-    redirectTo: redirectTo,
-  },
-})
-
-      if (error) throw error
-    } catch (err) {
-      setError('Errore durante il login: ' + err.message)
-      setLoading(false)
+    if (error) {
+      console.error('Errore OAuth:', error)
+      throw error
     }
+  } catch (err) {
+    setError('Errore durante il login: ' + err.message)
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
