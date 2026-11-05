@@ -63,20 +63,23 @@ useEffect(() => {
 }
 
 const handleBarcodeProduct = (productData) => {
-  setFood({
-    ...food,
-    name: productData.name,
-    calories: productData.calories,
-    pro: productData.pro,
-    carb: productData.carb,
-    gra: productData.gra,
-    fib: productData.fib,
-  })
-  
-  // Delay prima di chiudere il modal per evitare crash
+  // Imposta i dati con un leggero delay per evitare race condition
   setTimeout(() => {
-    setShowBarcode(false)
-  }, 500)
+    setFood({
+      ...food,
+      name: productData.name,
+      calories: productData.calories,
+      pro: productData.pro,
+      carb: productData.carb,
+      gra: productData.gra,
+      fib: productData.fib,
+    })
+    
+    // Chiudi il modal con un altro delay
+    setTimeout(() => {
+      setShowBarcode(false)
+    }, 300)
+  }, 300)
 }
 
   return (
