@@ -63,7 +63,7 @@ useEffect(() => {
   if (user) {
     const loadFromSupabase = async () => {
       try {
-        const supabaseFoods = await loadFoods(user.id)
+        const supabaseFoods = await loadFoodsDB(user.id)
         if (supabaseFoods.length > 0) {
           // Se ci sono dati su Supabase, usa quelli
           setFoods(supabaseFoods)
