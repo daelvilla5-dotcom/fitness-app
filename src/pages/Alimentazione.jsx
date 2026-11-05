@@ -4,19 +4,19 @@ import AddFoodModal from '../components/AddFoodModal'
 import { 
   loadFoods as loadFoodsDB, 
   saveFood as saveFoodDB, 
-  updateFood as updateFoodDB, 
-  deleteFood as deleteFoodDB 
+  deleteFood as deleteFoodDB,
+  loadActiveDailyLog as loadActiveDailyLogDB,
+  saveDailyLog as saveDailyLogDB,
+  loadTargets as loadTargetsDB,
+  saveTargets as saveTargetsDB,
+  loadUserProfile as loadUserProfileDB
 } from '../utils/supabaseData'
 import {
   getFoods,
-  saveFood,
-  deleteFood,
-  updateFood,
   getTodayLog,
   addToDailyLog,
   removeFromDailyLog,
   updateFoodGrams,
-  getDailyTotals,
   getActiveDay,
   startNewDay,
   endCurrentDay,
@@ -29,11 +29,6 @@ import {
   getPresets,
   updatePreset,
 } from '../utils/userData'
-import { 
-  loadActiveDailyLog as loadActiveDailyLogDB,
-  saveDailyLog as saveDailyLogDB
-} from '../utils/supabaseData'
-
 
 function Alimentazione({ user }) {
   const [activeTab, setActiveTab] = useState('pasti')
@@ -59,86 +54,171 @@ function Alimentazione({ user }) {
   const [targets, setTargets] = useState(getTargets())
   const [editingGrams, setEditingGrams] = useState(null)
 
-  useEffect(() => {
-    loadData()
-  }, [])
+  // Funzione helper per calcolare i totali direttamente dall'array dailyLog (per evitare dipendenze dal localStorage)
+  const calculateTotals = (log) => {
+    return log.reduce((acc, entry) => {
+      const multiplier = entry.grams / 100
+      return {
+        calories: acc.calories + (entry.calories * multiplier),
+        pro: acc.pro + (entry.pro * multiplier),
+        carb: acc.carb + (entry.carb * multiplier),
+        gra: acc.gra + (entry.gra * multiplier),
+        fib: acc.fib + (entry.fib * multiplier),
+      }
+    }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+  }
 
-  // Carica alimenti da Supabase all'avvio
-useEffect(() => {
-  if (user) {
-    const loadFromSupabase = async () => {
+  // UNICO useEffect di inizializzazione che priorizza Supabase
+  useEffect(() => {
+    if (!user) return
+
+    const initApp = async () => {
       try {
-        // Carica alimenti
+        // 1. Carica Profilo da Supabase
+        const dbProfile = await loadUserProfileDB(user.id)
+        if (dbProfile) {
+          const p = { 
+            genere: dbProfile.genere || 'M', 
+            eta: dbProfile.eta, 
+            altezza: dbProfile.altezza,
+            dataNascita: dbProfile.data_nascita
+          }
+          setProfile(p)
+          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
+        } else {
+          setProfile(getUserProfile())
+        }
+
+        // 2. Carica Peso Medio
+        setAverageWeight(getAverageWeight())
+
+        // 3. Carica Giorno Attivo da Supabase
+        const dbLog = await loadActiveDailyLogDB(user.id)
+        if (dbLog && dbLog.is_active) {
+          const syncedDay = {
+            id: dbLog.id,
+            startDate: dbLog.start_date,
+            endDate: dbLog.end_date,
+            isActive: true,
+            entries: dbLog.entries || []
+          }
+          setActiveDay(syncedDay)
+          setDailyLog(syncedDay.entries)
+          setDailyTotals(calculateTotals(syncedDay.entries))
+        } else {
+          // Fallback al locale se non c'è nulla su Supabase
+          const localDay = getActiveDay()
+          if (localDay && localDay.isActive) {
+            setActiveDay(localDay)
+            const localLog = getTodayLog()
+            setDailyLog(localLog)
+            setDailyTotals(calculateTotals(localLog))
+          }
+        }
+
+        // 4. Carica Obiettivi da Supabase
+        const dbTargets = await loadTargetsDB(user.id)
+        if (dbTargets) {
+          setTargets(dbTargets)
+          localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
+        } else {
+          setTargets(getTargets())
+        }
+
+        // 5. Carica Alimenti da Supabase
         const supabaseFoods = await loadFoodsDB(user.id)
         if (supabaseFoods.length > 0) {
           setFoods(supabaseFoods)
         } else {
-          const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
-          if (localFoods.length > 0) setFoods(localFoods)
+          setFoods(getFoods())
         }
-        
+
       } catch (err) {
-        console.error('Errore caricamento da Supabase:', err)
+        console.error('Errore caricamento iniziale da Supabase:', err)
+        // Fallback totale al locale in caso di errore
+        setProfile(getUserProfile())
+        setAverageWeight(getAverageWeight())
+        setActiveDay(getActiveDay())
+        setDailyLog(getTodayLog())
+        setDailyTotals(calculateTotals(getTodayLog()))
+        setTargets(getTargets())
+        setFoods(getFoods())
       }
     }
-    loadFromSupabase()
-  }
-}, [user])
 
-// Salva automaticamente il diario su Supabase quando cambia
-useEffect(() => {
-  if (user && activeDay && activeDay.entries && activeDay.entries.length > 0) {
-    const saveTimer = setTimeout(async () => {
+    initApp()
+  }, [user])
+
+  // Salva automaticamente il diario su Supabase quando cambia (Debounce)
+  useEffect(() => {
+    if (user && activeDay && activeDay.isActive) {
+      const saveTimer = setTimeout(async () => {
+        try {
+          await saveDailyLogDB(user.id, {
+            start_date: activeDay.startDate,
+            end_date: activeDay.endDate || null,
+            is_active: true,
+            entries: dailyLog
+          })
+        } catch (err) {
+          console.error('Errore salvataggio automatico diario:', err)
+        }
+      }, 1000)
+      return () => clearTimeout(saveTimer)
+    }
+  }, [user, activeDay, dailyLog])
+
+  const handleStartNewDay = async () => {
+    if (activeDay && activeDay.isActive) {
+      if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
+      
+      // 1. Chiudi il giorno corrente SU SUPABASE
       try {
         await saveDailyLogDB(user.id, {
-          start_date: activeDay.startDate || new Date().toISOString().split('T')[0],
-          end_date: activeDay.endDate || null,
-          is_active: activeDay.isActive !== false,
-          entries: activeDay.entries
+          start_date: activeDay.startDate,
+          end_date: new Date().toISOString(),
+          is_active: false,
+          entries: dailyLog
         })
       } catch (err) {
-        console.error('Errore salvataggio diario:', err)
+        console.error('Errore chiusura giorno su Supabase:', err)
       }
-    }, 1000) // Debounce di 1 secondo per non sovraccaricare
-
-    return () => clearTimeout(saveTimer)
-  }
-}, [user, activeDay])
-
-  const loadData = () => {
-    setFoods(getFoods())
-    setDailyLog(getTodayLog())
-    setDailyTotals(getDailyTotals())
-    setActiveDay(getActiveDay())
-    
-    const savedProfile = getUserProfile()
-    setProfile(savedProfile)
-    setAverageWeight(getAverageWeight())
-
-    // Carica il preset salvato per l'obiettivo corrente
-    const presets = getPresets()
-    const currentPreset = presets[obiettivo] || presets.mantenimento
-    setMultipliers(currentPreset)
-  }
-
-  const handleStartNewDay = () => {
-  if (activeDay && activeDay.isActive) {
-    if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
-    
-    // Backup automatico prima di chiudere il giorno
-    const { downloadBackup } = require('../utils/dataManager')
-    try {
-      downloadBackup()
-    } catch (err) {
+      
+      // Chiudi anche in locale per sicurezza
+      endCurrentDay()
     }
-    
-    endCurrentDay()
-  }
-  startNewDay()
-  loadData()
-}
 
-  const calcolaFabbisogno = () => {
+    // 2. Crea il nuovo giorno
+    const newDayData = {
+      start_date: new Date().toISOString().split('T')[0],
+      end_date: null,
+      is_active: true,
+      entries: []
+    }
+
+    try {
+      const saved = await saveDailyLogDB(user.id, newDayData)
+      const newActiveDay = {
+        id: saved.id,
+        startDate: saved.start_date,
+        endDate: saved.end_date,
+        isActive: true,
+        entries: []
+      }
+      setActiveDay(newActiveDay)
+      setDailyLog([])
+      setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+    } catch (err) {
+      console.error('Errore avvio nuovo giorno su Supabase:', err)
+      // Fallback locale
+      startNewDay()
+      setActiveDay(getActiveDay())
+      setDailyLog(getTodayLog())
+      setDailyTotals(calculateTotals(getTodayLog()))
+    }
+  }
+
+  const calcolaFabbisogno = async () => {
     if (!profile) {
       alert('Completa prima la sezione Dati → Anagrafica!')
       return
@@ -166,14 +246,13 @@ useEffect(() => {
       moltoIntensa: 1.9,
     }
 
-    let tdee = bmr * fattori[attivita]
+    let tdee = bmr * (fattori[attivita] || 1.55)
 
     if (obiettivo === 'massa') tdee += 300
     else if (obiettivo === 'definizione') tdee -= 500
     else if (obiettivo === 'ricomposizione') tdee -= 200
 
     const calorieTotali = Math.round(tdee)
-
     const proteine = Math.ceil(multipliers.pro * peso)
     const grassi = Math.ceil(multipliers.gra * peso)
     const fibre = multipliers.fib
@@ -181,7 +260,6 @@ useEffect(() => {
     const caloriePro = proteine * 4
     const calorieGra = grassi * 9
     const calorieFib = fibre * 2
-
     const calorieRimanenti = calorieTotali - caloriePro - calorieGra - calorieFib
     const carboidrati = Math.max(0, Math.round(calorieRimanenti / 4))
 
@@ -194,12 +272,17 @@ useEffect(() => {
     }
 
     setTargets(newTargets)
-    saveTargets(newTargets)
     
-    // Salva automaticamente il preset modificato
+    // Salva SU SUPABASE e in locale
+    try {
+      await saveTargetsDB(user.id, newTargets)
+    } catch (err) {
+      console.error('Errore salvataggio obiettivi:', err)
+    }
+    saveTargets(newTargets) // Fallback locale
+    
     updatePreset(obiettivo, multipliers)
-    
-    alert(`Obiettivi salvati! Preset "${obiettivo}" aggiornato.`)
+    alert(`Obiettivi salvati e sincronizzati! Preset "${obiettivo}" aggiornato.`)
   }
 
   const applyPreset = (presetName) => {
@@ -209,52 +292,36 @@ useEffect(() => {
     setObiettivo(presetName)
   }
 
-  // Quando l'utente modifica manualmente i moltiplicatori, aggiorna il preset corrente
   const handleMultiplierChange = (field, value) => {
     const newMultipliers = { ...multipliers, [field]: Number(value) }
     setMultipliers(newMultipliers)
-    // Aggiorna automaticamente il preset corrente in memoria
     updatePreset(obiettivo, newMultipliers)
   }
 
   const handleSaveFood = async (foodData) => {
-  try {
-    // Salva su Supabase
-    const savedFood = await saveFoodDB(user.id, foodData)
-    
-    // Aggiorna lo stato locale
-    const updatedFoods = [...foods, savedFood]
-    setFoods(updatedFoods)
-    
-    // Salva anche su localStorage (backup)
-    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
-    
-    // ✅ CHIUDI IL MODAL
-    setShowAddFoodModal(false)
-    
-  } catch (err) {
-    console.error('Errore salvataggio su Supabase:', err)
-    alert('Errore nel salvataggio dell\'alimento')
+    try {
+      const savedFood = await saveFoodDB(user.id, foodData)
+      const updatedFoods = [...foods, savedFood]
+      setFoods(updatedFoods)
+      localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+      setShowAddFoodModal(false)
+    } catch (err) {
+      console.error('Errore salvataggio su Supabase:', err)
+      alert('Errore nel salvataggio dell\'alimento')
+    }
   }
-}
 
   const handleDeleteFood = async (foodId) => {
-  if (!confirm('Eliminare questo alimento?')) return
-  
-  try {
-    // Elimina da Supabase usando il nome rinominato
-    await deleteFoodDB(foodId) // ← Usa deleteFoodDB
-    
-    // Aggiorna stato locale
-    const updatedFoods = foods.filter(f => f.id !== foodId)
-    setFoods(updatedFoods)
-    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
-    
-  } catch (err) {
-    console.error('Errore eliminazione da Supabase:', err)
-    // Fallback...
+    if (!confirm('Eliminare questo alimento?')) return
+    try {
+      await deleteFoodDB(foodId)
+      const updatedFoods = foods.filter(f => f.id !== foodId)
+      setFoods(updatedFoods)
+      localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    } catch (err) {
+      console.error('Errore eliminazione da Supabase:', err)
+    }
   }
-}
 
   const handleEditFood = (food) => {
     setEditingFood(food)
@@ -266,13 +333,15 @@ useEffect(() => {
       alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
       return
     }
-    setDailyLog(addToDailyLog(food, grams))
-    setDailyTotals(getDailyTotals())
+    const newLog = addToDailyLog(food, grams)
+    setDailyLog(newLog)
+    setDailyTotals(calculateTotals(newLog))
   }
 
   const handleRemoveFromDailyLog = (entryId) => {
-    setDailyLog(removeFromDailyLog(entryId))
-    setDailyTotals(getDailyTotals())
+    const newLog = removeFromDailyLog(entryId)
+    setDailyLog(newLog)
+    setDailyTotals(calculateTotals(newLog))
   }
 
   const handleUpdateGrams = (entryId, newGrams) => {
@@ -280,42 +349,36 @@ useEffect(() => {
       alert('Inserisci una quantità valida!')
       return
     }
-    setDailyLog(updateFoodGrams(entryId, newGrams))
-    setDailyTotals(getDailyTotals())
+    const newLog = updateFoodGrams(entryId, newGrams)
+    setDailyLog(newLog)
+    setDailyTotals(calculateTotals(newLog))
     setEditingGrams(null)
   }
 
   const formatDate = (dateStr) => {
     return new Date(dateStr).toLocaleString('it-IT', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
     })
   }
 
   const round1 = (val) => Math.round(val * 10) / 10
 
   const tabs = [
-  { id: 'pasti', label: 'Pasti', icon: '🍽️' },
-  { id: 'calcolo', label: 'Calcola', icon: '📊' },
-]
+    { id: 'pasti', label: 'Pasti', icon: '🍽️' },
+    { id: 'calcolo', label: 'Calcola', icon: '📊' },
+  ]
 
   return (
     <div className="p-4 pb-24">
       <h2 className="text-2xl font-bold text-electric mb-6 mt-2">🍎 Alimentazione</h2>
 
-      {/* Tab Navigation */}
       <div className="flex gap-2 mb-4">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex-1 py-2 rounded-lg font-semibold text-sm ${
-              activeTab === tab.id
-                ? 'bg-electric text-black'
-                : 'bg-card text-white border border-border'
+              activeTab === tab.id ? 'bg-electric text-black' : 'bg-card text-white border border-border'
             }`}
           >
             {tab.icon} {tab.label}
@@ -323,10 +386,8 @@ useEffect(() => {
         ))}
       </div>
 
-      {/* ==================== TAB PASTI ==================== */}
       {activeTab === 'pasti' && (
         <>
-          {/* Pannello Giorno Attivo */}
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-2">Giorno Attivo</h3>
             <div className="flex justify-between items-center">
@@ -348,7 +409,6 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Avviso se mancano dati */}
           {(!profile || !averageWeight) && (
             <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 mb-4">
               <p className="text-red-400 text-sm font-semibold mb-1">⚠️ Dati mancanti</p>
@@ -359,18 +419,16 @@ useEffect(() => {
             </div>
           )}
 
-          {/* Pannello Oggi con grafico */}
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Oggi</h3>
-            
             <div className="text-center mb-4">
               <p className="text-3xl font-bold text-white">
-                🔥 {dailyTotals.calories} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span>
+                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span>
               </p>
               <p className="text-sm text-gray-400 mt-1">
                 {targets.calories - dailyTotals.calories > 0 
-                  ? `${targets.calories - dailyTotals.calories} kcal rimanenti`
-                  : `${dailyTotals.calories - targets.calories} kcal in eccesso`}
+                  ? `${Math.round(targets.calories - dailyTotals.calories)} kcal rimanenti`
+                  : `${Math.round(dailyTotals.calories - targets.calories)} kcal in eccesso`}
               </p>
             </div>
 
@@ -393,10 +451,7 @@ useEffect(() => {
                     <div className="w-full bg-gray-700 rounded-full h-2">
                       <div
                         className="h-2 rounded-full transition-all duration-300"
-                        style={{ 
-                          width: `${percentage}%`,
-                          backgroundColor: macro.color 
-                        }}
+                        style={{ width: `${percentage}%`, backgroundColor: macro.color }}
                       ></div>
                     </div>
                   </div>
@@ -405,10 +460,8 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Pannello Oggi n° alimenti */}
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Oggi ({dailyLog.length} alimenti)</h3>
-            
             {dailyLog.length === 0 ? (
               <p className="text-gray-400 text-sm text-center py-4">Nessun alimento aggiunto oggi</p>
             ) : (
@@ -419,7 +472,7 @@ useEffect(() => {
                       <div className="flex-1">
                         <p className="text-white font-semibold text-lg">{entry.name}</p>
                         <p className="text-sm text-gray-400">
-                          🔥 {entry.calories} kcal • Pro: {round1(entry.pro)}g • Carbo: {round1(entry.carb)}g • Grassi: {round1(entry.gra)}g • Fibre: {round1(entry.fib)}g
+                          🔥 {Math.round(entry.calories)} kcal • Pro: {round1(entry.pro)}g • Carbo: {round1(entry.carb)}g • Grassi: {round1(entry.gra)}g • Fibre: {round1(entry.fib)}g
                         </p>
                       </div>
                       <button
@@ -467,7 +520,6 @@ useEffect(() => {
             )}
           </div>
 
-          {/* Pulsante + Alimento */}
           <button
             onClick={() => {
               setEditingFood(null)
@@ -478,7 +530,6 @@ useEffect(() => {
             + Alimento
           </button>
 
-          {/* Pannello Alimenti Salvati */}
           <h3 className="text-lg font-semibold text-white mb-3">Alimenti Salvati ({foods.length})</h3>
           {foods.map((food) => (
             <FoodItem
@@ -492,10 +543,8 @@ useEffect(() => {
         </>
       )}
 
-      {/* ==================== TAB CALCOLO ==================== */}
       {activeTab === 'calcolo' && (
         <>
-          {/* Pannello Profilo */}
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Profilo</h3>
             {profile && averageWeight ? (
@@ -527,12 +576,9 @@ useEffect(() => {
             )}
           </div>
 
-          {/* Pannello Calcolo Fabbisogno (sempre esteso) */}
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-4">Calcolo Fabbisogno</h3>
-
             <div className="space-y-4">
-              {/* Preset rapidi */}
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Preset rapido</label>
                 <div className="grid grid-cols-4 gap-2">
@@ -550,21 +596,21 @@ useEffect(() => {
                 </div>
               </div>
 
-              {/* Livello attività */}
               <div>
-  <label className="text-sm text-gray-400 mb-1 block">Livello attività</label>
-  <select
-    value={attivita}
-    onChange={(e) => setAttivita(e.target.value)}
-    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
-  >
-    <option value="sedentaria">Sedentario</option>
-    <option value="leggera">Leggera (1-3)</option>
-    <option value="moderata">Moderata (3-5)</option>
-  </select>
-</div>
+                <label className="text-sm text-gray-400 mb-1 block">Livello attività</label>
+                <select
+                  value={attivita}
+                  onChange={(e) => setAttivita(e.target.value)}
+                  className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
+                >
+                  <option value="sedentaria">Sedentario</option>
+                  <option value="leggera">Leggera (1-3)</option>
+                  <option value="moderata">Moderata (3-5)</option>
+                  <option value="intensa">Intensa (5-6)</option>
+                  <option value="moltoIntensa">Molto intensa</option>
+                </select>
+              </div>
 
-              {/* Obiettivo */}
               <div>
                 <label className="text-sm text-gray-400 mb-1 block">Obiettivo</label>
                 <select
@@ -582,12 +628,10 @@ useEffect(() => {
                 </select>
               </div>
 
-              {/* Configurazione macro */}
               <div className="border-t border-border pt-4">
                 <label className="text-sm text-electric mb-3 block font-semibold">
                   Configurazione macro (per kg di peso)
                 </label>
-                
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs text-gray-400 mb-1 block">
@@ -601,7 +645,6 @@ useEffect(() => {
                       className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
                     />
                   </div>
-
                   <div>
                     <label className="text-xs text-gray-400 mb-1 block">
                       Grassi: {multipliers.gra} g/kg → {Math.ceil(multipliers.gra * (averageWeight || 0))}g
@@ -614,11 +657,8 @@ useEffect(() => {
                       className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
                     />
                   </div>
-
                   <div>
-                    <label className="text-xs text-gray-400 mb-1 block">
-                      Fibre (grammi fissi)
-                    </label>
+                    <label className="text-xs text-gray-400 mb-1 block">Fibre (grammi fissi)</label>
                     <input
                       type="number"
                       value={multipliers.fib}
@@ -626,12 +666,9 @@ useEffect(() => {
                       className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
                     />
                   </div>
-
                   <div className="bg-electric/10 border border-electric rounded-lg p-3">
                     <p className="text-xs text-gray-400 mb-1">Carboidrati (calcolati automaticamente)</p>
-                    <p className="text-sm text-white">
-                      = (Calorie totali - Pro×4 - Gra×9 - Fib×2) ÷ 4
-                    </p>
+                    <p className="text-sm text-white">= (Calorie totali - Pro×4 - Gra×9 - Fib×2) ÷ 4</p>
                   </div>
                 </div>
               </div>
@@ -645,13 +682,10 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Risultati correnti */}
           <div className="bg-electric/10 border border-electric rounded-lg p-4">
             <h3 className="text-lg font-semibold text-electric mb-3">Obiettivi Attuali</h3>
             <div className="text-center mb-3">
-              <p className="text-3xl font-bold text-white">
-                🔥 {targets.calories} <span className="text-lg text-gray-400">kcal</span>
-              </p>
+              <p className="text-3xl font-bold text-white">🔥 {targets.calories} <span className="text-lg text-gray-400">kcal</span></p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-800 rounded-lg p-3 text-center">
@@ -675,7 +709,6 @@ useEffect(() => {
         </>
       )}
 
-      {/* Modal aggiunta/modifica alimento */}
       {showAddFoodModal && (
         <AddFoodModal
           onSave={handleSaveFood}
