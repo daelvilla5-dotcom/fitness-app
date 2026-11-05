@@ -248,7 +248,7 @@ export async function saveUserProfile(userId, profileData) {
           altezza: profileData.altezza,
           eta: profileData.eta
         })
-        .eq('email', profileData.email)  // ← Usa email invece di user_id
+        .eq('email', profileData.email)  // ← Usa email
         .select()
         .single()
 
@@ -259,7 +259,7 @@ export async function saveUserProfile(userId, profileData) {
       const { data, error } = await supabase
         .from('user_profiles')
         .insert({
-          email: profileData.email,
+          email: profileData.email,  // ← Usa email
           genere: profileData.genere,
           data_nascita: profileData.data_nascita,
           altezza: profileData.altezza,

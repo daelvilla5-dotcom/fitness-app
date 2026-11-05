@@ -13,11 +13,9 @@ export async function migrateLocalStorageToSupabase(user) {
   const migrationKey = `fitness_app_migrated_${user.id}`
   
   if (localStorage.getItem(migrationKey)) {
-    console.log('✅ Migrazione già completata per questo utente. Skip.')
     return
   }
 
-  console.log('🚀 Avvio migrazione dati locali su Supabase...')
   let migratedCount = 0
 
   try {
@@ -77,8 +75,6 @@ export async function migrateLocalStorageToSupabase(user) {
 
     // ✅ Segna la migrazione come completata per questo utente
     localStorage.setItem(migrationKey, 'true')
-    
-    console.log(`✅ Migrazione completata con successo! ${migratedCount} elementi trasferiti nel cloud.`)
     
     if (migratedCount > 0) {
       // Piccolo avviso non invasivo per l'utente

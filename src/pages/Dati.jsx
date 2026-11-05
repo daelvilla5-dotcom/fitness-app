@@ -136,7 +136,6 @@ function Dati({ user }) {
       const updatedLog = weightLog.filter(entry => entry.id !== entryId)
       setWeightLog(updatedLog)
       localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      console.log('✅ Pesata eliminata da Supabase')
     } catch (err) {
       console.error('Errore eliminazione pesata:', err)
       alert('Errore nell\'eliminazione della pesata')
@@ -201,7 +200,6 @@ function Dati({ user }) {
       
       setShowMeasurementInput(false)
       setEditingMeasurement(null)
-      console.log('✅ Misura salvata su Supabase')
     } catch (err) {
       console.error('Errore salvataggio misura:', err)
       alert('Errore nel salvataggio della misura')
@@ -215,7 +213,6 @@ function Dati({ user }) {
       const updated = measurements.filter(m => m.id !== mId)
       setMeasurements(updated)
       localStorage.setItem('fitness_app_measurements', JSON.stringify(updated))
-      console.log('✅ Misura eliminata da Supabase')
     } catch (err) {
       console.error('Errore eliminazione misura:', err)
       alert('Errore nell\'eliminazione della misura')

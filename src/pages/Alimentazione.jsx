@@ -76,17 +76,7 @@ useEffect(() => {
           const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
           if (localFoods.length > 0) setFoods(localFoods)
         }
-
-        // Carica diario attivo
-        //const activeLog = await loadActiveDailyLogDB(user.id)
-        //if (activeLog) {
-          // Se c'è un giorno attivo su Supabase, usalo
-          //setActiveDay(activeLog) // Assicurati che il nome della variabile di stato corrisponda
-          //console.log('📅 Diario attivo caricato da Supabase')
-        //}
-        // Altrimenti, il codice esistente creerà un nuovo giorno da localStorage
         
-        console.log('✅ Dati alimentazione caricati')
       } catch (err) {
         console.error('Errore caricamento da Supabase:', err)
       }
@@ -106,7 +96,6 @@ useEffect(() => {
           is_active: activeDay.isActive !== false,
           entries: activeDay.entries
         })
-        console.log('💾 Diario salvato su Supabase')
       } catch (err) {
         console.error('Errore salvataggio diario:', err)
       }
@@ -141,7 +130,6 @@ useEffect(() => {
     try {
       downloadBackup()
     } catch (err) {
-      console.log('Backup automatico fallito:', err)
     }
     
     endCurrentDay()
@@ -244,7 +232,6 @@ useEffect(() => {
     // ✅ CHIUDI IL MODAL
     setShowAddFoodModal(false)
     
-    console.log('✅ Alimento salvato su Supabase:', savedFood.name)
   } catch (err) {
     console.error('Errore salvataggio su Supabase:', err)
     alert('Errore nel salvataggio dell\'alimento')
@@ -263,7 +250,6 @@ useEffect(() => {
     setFoods(updatedFoods)
     localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
     
-    console.log('✅ Alimento eliminato da Supabase')
   } catch (err) {
     console.error('Errore eliminazione da Supabase:', err)
     // Fallback...

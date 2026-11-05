@@ -40,7 +40,6 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
                 if (session) {
-          console.log('App: Sessione trovata', session.user.email)
           
           const { data: approvedUser } = await supabase
             .from('approved_users')
@@ -56,7 +55,6 @@ function App() {
             migrateLocalStorageToSupabase(session.user)
             
           } else {
-            console.log('App: Utente non approvato')
             await supabase.auth.signOut()
           }
         } else {
