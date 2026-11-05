@@ -1,14 +1,43 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 
+// Stessa chiave usata in App.jsx
+const APPROVED_USER_KEY = 'fitness_app_approved_user'
+
 function Login({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isOffline, setIsOffline] = useState(!navigator.onLine)
 
   useEffect(() => {
+    // Aggiorna lo stato offline/online in tempo reale
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
     // Controlla se c'è già una sessione attiva
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
+        // Se offline, usa il fallback locale
+        if (!navigator.onLine) {
+          const savedUser = localStorage.getItem(APPROVED_USER_KEY)
+          if (savedUser) {
+            try {
+              const parsed = JSON.parse(savedUser)
+              console.log('✅ Login offline riuscito con utente salvato:', parsed.email)
+              onLoginSuccess(parsed)
+              return
+            } catch (e) {
+              console.error('Errore parsing utente salvato:', e)
+            }
+          }
+          setError('Sei offline e nessun utente è salvato in locale. Connettiti a internet per accedere.')
+          return
+        }
+
+        // Se online, verifica normalmente
         const isApproved = await checkIfApproved(session.user.email)
         if (isApproved) {
           onLoginSuccess(session.user)
@@ -18,6 +47,11 @@ function Login({ onLoginSuccess }) {
         }
       }
     })
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
   }, [onLoginSuccess])
 
   const checkIfApproved = async (email) => {
@@ -40,31 +74,36 @@ function Login({ onLoginSuccess }) {
   }
 
   const handleGoogleLogin = async () => {
-  try {
-    setLoading(true)
-    setError('')
-
-    // URL di reindirizzamento esplicito
-    const redirectTo = window.location.hostname.includes('vercel.app')
-      ? 'https://fitness-app-chi-bice.vercel.app'
-      : 'http://localhost:5173'
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectTo,
-      },
-    })
-
-    if (error) {
-      console.error('Errore OAuth:', error)
-      throw error
+    if (isOffline) {
+      setError('Sei offline. Connettiti a internet per effettuare il login.')
+      return
     }
-  } catch (err) {
-    setError('Errore durante il login: ' + err.message)
-    setLoading(false)
+
+    try {
+      setLoading(true)
+      setError('')
+
+      // URL di reindirizzamento esplicito
+      const redirectTo = window.location.hostname.includes('vercel.app')
+        ? 'https://fitness-app-chi-bice.vercel.app'
+        : 'http://localhost:5173'
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectTo,
+        },
+      })
+
+      if (error) {
+        console.error('Errore OAuth:', error)
+        throw error
+      }
+    } catch (err) {
+      setError('Errore durante il login: ' + err.message)
+      setLoading(false)
+    }
   }
-}
 
   return (
     <div className="min-h-screen bg-bg flex items-center justify-center p-4">
@@ -84,9 +123,15 @@ function Login({ onLoginSuccess }) {
           </div>
         )}
 
+        {isOffline && !error && (
+          <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-3 mb-6">
+            <p className="text-orange-400 text-sm">📡 Sei offline. Connettiti a internet per accedere.</p>
+          </div>
+        )}
+
         <button
           onClick={handleGoogleLogin}
-          disabled={loading}
+          disabled={loading || isOffline}
           className="w-full bg-electric text-black font-bold py-3 rounded-lg hover:bg-electric/90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {loading ? (
@@ -120,13 +165,4 @@ function Login({ onLoginSuccess }) {
         </button>
 
         <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">
-            Solo gli utenti approvati possono accedere
-          </p>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default Login
+          <p className="
