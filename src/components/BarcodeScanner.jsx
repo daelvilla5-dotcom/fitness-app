@@ -157,8 +157,9 @@ function BarcodeScanner({ onProductFound, onClose }) {
           fib: nutriments.fiber_100g || 0,
         }
 
-        await new Promise(resolve => setTimeout(resolve, 300))
-        onProductFound(nutritionData)
+        // Delay più lungo per evitare race condition
+await new Promise(resolve => setTimeout(resolve, 800))
+onProductFound(nutritionData)
       } else {
         setError(`Codice: ${barcode}\nProdotto non trovato nel database OpenFoodFacts.\n\nProva con:\n• Inserimento manuale\n• Scanner etichetta OCR`)
         setSearching(false)
