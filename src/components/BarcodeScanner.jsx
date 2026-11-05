@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 function BarcodeScanner({ onProductFound, onClose }) {
-  const [mode, setMode] = useState('choice')
+  const [mode, setMode] = useState('choice') // 'choice' | 'camera'
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
   const [lastScannedCode, setLastScannedCode] = useState('')
@@ -21,6 +21,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
   const startCamera = async () => {
     setError('')
     setMode('camera')
+    setSearching(false)
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -81,12 +82,15 @@ function BarcodeScanner({ onProductFound, onClose }) {
     }
   }
 
+  // FIX: quando scansiona, NON fermare la fotocamera subito
+  // Mostra solo l'overlay di ricerca sopra la fotocamera
   const onScanSuccess = async (decodedText) => {
-    await stopCamera()
     setLastScannedCode(decodedText)
     setSearching(true)
     setError('')
-    await lookupProduct(decodedText)
+    
+    // Cerca il prodotto SENZA fermare la fotocamera
+    await lookupProduct(decodedText, false)
   }
 
   const handleImageUpload = async (e) => {
@@ -103,7 +107,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
       
       if (decodedText) {
         setLastScannedCode(decodedText)
-        await lookupProduct(decodedText)
+        await lookupProduct(decodedText, true)
       } else {
         setError('Nessun codice a barre trovato nell\'immagine.\nProva con un\'immagine più nitida.')
         setSearching(false)
@@ -117,13 +121,10 @@ function BarcodeScanner({ onProductFound, onClose }) {
     e.target.value = ''
   }
 
-  // FIX: funzione lookup con timeout e gestione errori migliorata
-  const lookupProduct = async (barcode) => {
-    setSearching(true)
-    setError('')
-
+  // FIX: parametro stopCamera per decidere se fermare o meno
+  const lookupProduct = async (barcode, shouldStopCamera = true) => {
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 secondi timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
 
     try {
       const response = await fetch(
@@ -133,7 +134,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
       
       clearTimeout(timeoutId)
 
-      // FIX: controlla se la risposta HTTP è ok (200-299)
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
@@ -157,10 +157,18 @@ function BarcodeScanner({ onProductFound, onClose }) {
           fib: nutriments.fiber_100g || 0,
         }
 
-        // Delay più lungo per evitare race condition
-await new Promise(resolve => setTimeout(resolve, 800))
-onProductFound(nutritionData)
+        // FIX: ferma la fotocamera PRIMA di passare i dati
+        if (shouldStopCamera) {
+          await stopCamera()
+        }
+        
+        // Delay prima di chiudere
+        await new Promise(resolve => setTimeout(resolve, 500))
+        onProductFound(nutritionData)
       } else {
+        if (shouldStopCamera) {
+          await stopCamera()
+        }
         setError(`Codice: ${barcode}\nProdotto non trovato nel database OpenFoodFacts.\n\nProva con:\n• Inserimento manuale\n• Scanner etichetta OCR`)
         setSearching(false)
         setMode('choice')
@@ -171,13 +179,16 @@ onProductFound(nutritionData)
       
       let msg = ''
       if (err.name === 'AbortError') {
-        msg = 'Timeout: la richiesta ha impiegato troppo tempo.\n\nPossibili cause:\n• Connessione lenta\n• Server OpenFoodFacts sovraccarico\n\nProva con "Inserisci Codice Manualmente" o "Etichetta OCR".'
+        msg = 'Timeout: la richiesta ha impiegato troppo tempo.\n\nProva con:\n• "Inserisci Codice Manualmente"\n• "Etichetta OCR"'
       } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        msg = 'Errore di rete.\n\nControlla:\n• Connessione internet attiva\n• Il sito non è bloccato dal firewall\n\nProva con "Inserisci Codice Manualmente".'
+        msg = 'Errore di rete.\n\nControlla connessione internet.\n\nProva con "Inserisci Codice Manualmente".'
       } else {
-        msg = `Errore durante la ricerca.\n\nDettagli: ${err.message}\n\nProva con "Inserisci Codice Manualmente" o "Etichetta OCR".`
+        msg = `Errore durante la ricerca.\n\nDettagli: ${err.message}`
       }
       
+      if (shouldStopCamera) {
+        await stopCamera()
+      }
       setError(msg)
       setSearching(false)
       setMode('choice')
@@ -188,16 +199,13 @@ onProductFound(nutritionData)
     const barcode = prompt('Inserisci il codice a barre (13 cifre):')
     if (barcode && barcode.trim()) {
       setLastScannedCode(barcode.trim())
-      lookupProduct(barcode.trim())
+      lookupProduct(barcode.trim(), false)
     }
   }
 
-  const handleBackToChoice = async () => {
+  const handleClose = async () => {
     await stopCamera()
-    setMode('choice')
-    setSearching(false)
-    setError('')
-    setLastScannedCode('')
+    onClose()
   }
 
   return (
@@ -205,29 +213,14 @@ onProductFound(nutritionData)
       <div className="bg-card border border-border rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-bold text-electric">📷 Scanner Codice a Barre</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">
-            ✕
+          <button onClick={handleClose} className="text-gray-400 hover:text-white text-2xl">
+            
           </button>
         </div>
 
         <div className="space-y-4">
-          {searching && (
-            <div className="bg-electric/10 border border-electric rounded-lg p-6 text-center">
-              <p className="text-4xl mb-3">🔍</p>
-              <p className="text-electric font-semibold mb-2">Ricerca prodotto...</p>
-              {lastScannedCode && (
-                <p className="text-xs text-gray-400 mb-3">Codice: {lastScannedCode}</p>
-              )}
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div className="bg-electric h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
-              </div>
-              <p className="text-xs text-gray-500 mt-3">
-                Tempo massimo: 10 secondi
-              </p>
-            </div>
-          )}
-
-          {mode === 'choice' && !searching && (
+          {/* Scelta modalità */}
+          {mode === 'choice' && (
             <>
               <div className="bg-gray-900 rounded-lg p-6 text-center border border-border">
                 <p className="text-6xl mb-4">📷</p>
@@ -268,23 +261,47 @@ onProductFound(nutritionData)
               </div>
 
               <p className="text-xs text-gray-500 text-center">
-                💡 I dati verranno presi dal database OpenFoodFacts
+                 I dati verranno presi dal database OpenFoodFacts
               </p>
             </>
           )}
 
-          {mode === 'camera' && !searching && (
+          {/* Fotocamera attiva con overlay ricerca */}
+          {mode === 'camera' && (
             <div className="space-y-3">
-              <div className="bg-gray-900 rounded-lg overflow-hidden border border-border">
+              <div className="bg-gray-900 rounded-lg overflow-hidden border border-border relative">
                 <div id="barcode-reader" className="w-full min-h-[300px]"></div>
+                
+                {/* Overlay ricerca sopra la fotocamera */}
+                {searching && (
+                  <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
+                    <div className="text-center p-6">
+                      <p className="text-4xl mb-3">🔍</p>
+                      <p className="text-electric font-semibold mb-2">Ricerca prodotto...</p>
+                      {lastScannedCode && (
+                        <p className="text-xs text-gray-400 mb-3">Codice: {lastScannedCode}</p>
+                      )}
+                      <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
+                        <div className="bg-electric h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+                      </div>
+                      <p className="text-xs text-gray-500">Tempo massimo: 10 secondi</p>
+                    </div>
+                  </div>
+                )}
               </div>
               
-              <button
-                onClick={handleBackToChoice}
-                className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
-              >
-                ✕ Torna alla scelta
-              </button>
+              {!searching && (
+                <button
+                  onClick={() => {
+                    stopCamera()
+                    setMode('choice')
+                    setError('')
+                  }}
+                  className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
+                >
+                  ✕ Torna alla scelta
+                </button>
+              )}
             </div>
           )}
 
@@ -294,7 +311,12 @@ onProductFound(nutritionData)
             <div className="bg-red-500/10 border border-red-500 rounded-lg p-3">
               <p className="text-red-400 text-sm whitespace-pre-wrap">{error}</p>
               <button
-                onClick={handleBackToChoice}
+                onClick={() => {
+                  stopCamera()
+                  setMode('choice')
+                  setError('')
+                  setSearching(false)
+                }}
                 className="mt-2 text-xs text-electric underline"
               >
                 Torna alla scelta modalità
