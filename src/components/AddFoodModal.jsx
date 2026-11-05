@@ -72,7 +72,11 @@ const handleBarcodeProduct = (productData) => {
     gra: productData.gra,
     fib: productData.fib,
   })
-  setShowBarcode(false)
+  
+  // Delay prima di chiudere il modal per evitare crash
+  setTimeout(() => {
+    setShowBarcode(false)
+  }, 500)
 }
 
   return (
