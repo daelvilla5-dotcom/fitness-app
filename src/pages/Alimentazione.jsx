@@ -168,11 +168,15 @@ function Alimentazione({ user }) {
     }
   }, [user, activeDay, dailyLog])
 
-  const handleStartNewDay = async () => {
+    const handleStartNewDay = async () => {
+    if (!user) {
+      alert("⚠️ ERRORE: Nessun utente loggato!")
+      return
+    }
+
     if (activeDay && activeDay.isActive) {
       if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
       
-      // 1. Chiudi il giorno corrente SU SUPABASE
       try {
         await saveDailyLogDB(user.id, {
           start_date: activeDay.startDate,
@@ -180,15 +184,16 @@ function Alimentazione({ user }) {
           is_active: false,
           entries: dailyLog
         })
+        console.log("✅ Vecchio giorno chiuso su Supabase")
       } catch (err) {
-        console.error('Errore chiusura giorno su Supabase:', err)
+        alert(`❌ ERRORE nel chiudere il giorno su Supabase:\n${err.message}`)
+        console.error(err)
+        return // Blocca l'esecuzione se fallisce
       }
       
-      // Chiudi anche in locale per sicurezza
-      endCurrentDay()
+      endCurrentDay() // Fallback locale
     }
 
-    // 2. Crea il nuovo giorno
     const newDayData = {
       start_date: new Date().toISOString().split('T')[0],
       end_date: null,
@@ -198,6 +203,8 @@ function Alimentazione({ user }) {
 
     try {
       const saved = await saveDailyLogDB(user.id, newDayData)
+      alert(`✅ SUCCESSO! Nuovo giorno creato su Supabase.\nID: ${saved.id}`)
+      
       const newActiveDay = {
         id: saved.id,
         startDate: saved.start_date,
@@ -209,12 +216,8 @@ function Alimentazione({ user }) {
       setDailyLog([])
       setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
     } catch (err) {
-      console.error('Errore avvio nuovo giorno su Supabase:', err)
-      // Fallback locale
-      startNewDay()
-      setActiveDay(getActiveDay())
-      setDailyLog(getTodayLog())
-      setDailyTotals(calculateTotals(getTodayLog()))
+      alert(`❌ ERRORE CRITICO nel salvare su Supabase:\n${err.message}`)
+      console.error("ERRORE DETTAGLIATO:", err)
     }
   }
 
