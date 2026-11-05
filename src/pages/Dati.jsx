@@ -25,6 +25,7 @@ import {
   deleteMeasurement as deleteMeasurementDB,
   saveUserProfile as saveUserProfileDB,
 } from '../utils/supabaseData'
+import { addToQueue } from '../utils/offlineQueue'
 
 function Dati({ user }) {
   const [activeTab, setActiveTab] = useState('anagrafica')
@@ -102,12 +103,34 @@ function Dati({ user }) {
   }
 
   const handleAddWeight = async (weight, date) => {
-    try {
-      const cleanWeightData = {
-        weight: parseFloat(weight),
-        date: date
-      }
+    const cleanWeightData = {
+      weight: parseFloat(weight),
+      date: date
+    }
+    
+    // Se offline, aggiungi alla coda e aggiorna UI localmente
+    if (!navigator.onLine) {
+      addToQueue({
+        type: 'CREATE_WEIGHT',
+        data: cleanWeightData
+      })
       
+      // Aggiorna UI localmente
+      const savedLog = {
+        id: `pending_${Date.now()}`,
+        weight: cleanWeightData.weight,
+        date: cleanWeightData.date
+      }
+      const updatedLog = [savedLog, ...weightLog]
+      setWeightLog(updatedLog)
+      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+      
+      alert('⚠️ Offline: pesata salvata in locale e verrà sincronizzata quando torni online')
+      return
+    }
+    
+    // Se online, procedi normalmente
+    try {
       const newLog = await saveWeightLogDB(user.id, cleanWeightData.weight, cleanWeightData.date)
       
       const savedLog = {
@@ -120,6 +143,7 @@ function Dati({ user }) {
       setWeightLog(updatedLog)
       localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
       
+      console.log('✅ Pesata salvata su Supabase')
     } catch (err) {
       console.error('Errore salvataggio pesata:', err)
       alert('Errore nel salvataggio della pesata')
@@ -129,11 +153,29 @@ function Dati({ user }) {
   const handleDeleteWeight = async (entryId) => {
     if (!confirm('Eliminare questa pesata?')) return
     
+    // Se offline, aggiungi alla coda
+    if (!navigator.onLine) {
+      addToQueue({
+        type: 'DELETE_WEIGHT',
+        data: { id: entryId }
+      })
+      
+      // Aggiorna UI localmente
+      const updatedLog = weightLog.filter(entry => entry.id !== entryId)
+      setWeightLog(updatedLog)
+      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+      
+      alert('⚠️ Offline: eliminazione salvata in locale e verrà sincronizzata quando torni online')
+      return
+    }
+    
+    // Se online, procedi normalmente
     try {
       await deleteWeightLogDB(entryId)
       const updatedLog = weightLog.filter(entry => entry.id !== entryId)
       setWeightLog(updatedLog)
       localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+      console.log('✅ Pesata eliminata da Supabase')
     } catch (err) {
       console.error('Errore eliminazione pesata:', err)
       alert('Errore nell\'eliminazione della pesata')
@@ -167,24 +209,48 @@ function Dati({ user }) {
   }
 
   const handleSaveMeasurement = async (data) => {
-    try {
-      const existing = measurements.find(m => m.date === data.date)
-      const dbArea = mapAreaToDb(editingMeasurement.area)
+    const existing = measurements.find(m => m.date === data.date)
+    const dbArea = mapAreaToDb(editingMeasurement.area)
 
-      const updatedMeasurement = {
-        date: data.date,
-        braccio_destro: existing?.braccio_destro || null,
-        braccio_sinistro: existing?.braccio_sinistro || null,
-        torace: existing?.torace || null,
-        vita: existing?.vita || null,
-        glutei: existing?.glutei || null,
-        coscia_destra: existing?.coscia_destra || null,
-        coscia_sinistra: existing?.coscia_sinistra || null,
-        polpaccio_destro: existing?.polpaccio_destro || null,
-        polpaccio_sinistro: existing?.polpaccio_sinistro || null,
-        [dbArea]: parseFloat(data.value)
+    const updatedMeasurement = {
+      date: data.date,
+      braccio_destro: existing?.braccio_destro || null,
+      braccio_sinistro: existing?.braccio_sinistro || null,
+      torace: existing?.torace || null,
+      vita: existing?.vita || null,
+      glutei: existing?.glutei || null,
+      coscia_destra: existing?.coscia_destra || null,
+      coscia_sinistra: existing?.coscia_sinistra || null,
+      polpaccio_destro: existing?.polpaccio_destro || null,
+      polpaccio_sinistro: existing?.polpaccio_sinistro || null,
+      [dbArea]: parseFloat(data.value)
+    }
+    
+    // Se offline, aggiungi alla coda e aggiorna UI localmente
+    if (!navigator.onLine) {
+      addToQueue({
+        type: 'CREATE_MEASUREMENT',
+        data: updatedMeasurement
+      })
+      
+      // Aggiorna UI localmente
+      let newMeasurementsList
+      if (existing) {
+        newMeasurementsList = measurements.map(m => m.date === data.date ? { ...m, ...updatedMeasurement } : m)
+      } else {
+        newMeasurementsList = [{ id: `pending_${Date.now()}`, ...updatedMeasurement }, ...measurements]
       }
-
+      setMeasurements(newMeasurementsList)
+      localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
+      
+      setShowMeasurementInput(false)
+      setEditingMeasurement(null)
+      alert('️ Offline: misura salvata in locale e verrà sincronizzata quando torni online')
+      return
+    }
+    
+    // Se online, procedi normalmente
+    try {
       const saved = await saveMeasurementDB(user.id, updatedMeasurement)
       
       let newMeasurementsList
@@ -198,6 +264,7 @@ function Dati({ user }) {
       
       setShowMeasurementInput(false)
       setEditingMeasurement(null)
+      console.log('✅ Misura salvata su Supabase')
     } catch (err) {
       console.error('Errore salvataggio misura:', err)
       alert('Errore nel salvataggio della misura')
@@ -206,11 +273,30 @@ function Dati({ user }) {
 
   const handleDeleteMeasurement = async (mId) => {
     if (!confirm('Eliminare questa misurazione?')) return
+    
+    // Se offline, aggiungi alla coda
+    if (!navigator.onLine) {
+      addToQueue({
+        type: 'DELETE_MEASUREMENT',
+        data: { id: mId }
+      })
+      
+      // Aggiorna UI localmente
+      const updated = measurements.filter(m => m.id !== mId)
+      setMeasurements(updated)
+      localStorage.setItem('fitness_app_measurements', JSON.stringify(updated))
+      
+      alert('️ Offline: eliminazione salvata in locale e verrà sincronizzata quando torni online')
+      return
+    }
+    
+    // Se online, procedi normalmente
     try {
       await deleteMeasurementDB(mId)
       const updated = measurements.filter(m => m.id !== mId)
       setMeasurements(updated)
       localStorage.setItem('fitness_app_measurements', JSON.stringify(updated))
+      console.log('✅ Misura eliminata da Supabase')
     } catch (err) {
       console.error('Errore eliminazione misura:', err)
       alert('Errore nell\'eliminazione della misura')
@@ -224,7 +310,7 @@ function Dati({ user }) {
     { id: 'peso', label: 'Peso', icon: '⚖️' },
     { id: 'misure', label: 'Misure', icon: '📏' },
     { id: 'backup', label: 'Backup', icon: '💾' },
-    { id: 'account', label: 'Account', icon: '👤' },
+    { id: 'account', label: 'Account', icon: '' },
   ]
 
   const areaLabels = {
@@ -241,7 +327,7 @@ function Dati({ user }) {
 
   return (
     <div className="p-4 pb-24">
-      <h2 className="text-2xl font-bold text-electric mb-6 mt-2">📏 Dati Personali</h2>
+      <h2 className="text-2xl font-bold text-electric mb-6 mt-2"> Dati Personali</h2>
 
       {/* Tab navigation */}
       <div className="flex gap-2 mb-4">
@@ -376,7 +462,7 @@ function Dati({ user }) {
                       onClick={() => handleDeleteWeight(entry.id)}
                       className="text-red-500 hover:text-red-400"
                     >
-                      🗑
+                      
                     </button>
                   </div>
                 ))}
@@ -417,7 +503,7 @@ function Dati({ user }) {
             />
 
             <p className="text-xs text-gray-400 text-center mt-3">
-              👆 Clicca su un punto della sagoma o su un pulsante per inserire/modificare la misura
+               Clicca su un punto della sagoma o su un pulsante per inserire/modificare la misura
             </p>
           </div>
 
@@ -498,7 +584,7 @@ function Dati({ user }) {
                 onClick={handleLogout}
                 className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 active:scale-95 transition-all"
               >
-                🚪 Esci dall'account
+                 Esci dall'account
               </button>
             </div>
           </div>

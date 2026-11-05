@@ -8,6 +8,8 @@ import Alimentazione from './pages/Alimentazione'
 import Allenamento from './pages/Allenamento'
 import Dati from './pages/Dati'
 import { migrateLocalStorageToSupabase } from './utils/migrateData'
+import ConnectionStatus from './components/ConnectionStatus'
+import { syncPendingOperations } from './utils/syncService'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -17,18 +19,18 @@ function App() {
     // Controlla se c'è una sessione attiva all'avvio
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
-        // Verifica se l'email è approvata
         const { data: approvedUser } = await supabase
           .from('approved_users')
           .select('*')
           .eq('email', session.user.email)
           .eq('attivo', true)
-          .single()
+          .maybeSingle()
 
         if (approvedUser) {
           setUser(session.user)
+          migrateLocalStorageToSupabase(session.user)
+          syncPendingOperations(session.user)
         } else {
-          // Email non approvata → logout
           await supabase.auth.signOut()
           setUser(null)
         }
@@ -39,8 +41,7 @@ function App() {
     // Ascolta i cambiamenti di stato auth (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-                if (session) {
-          
+        if (session) {
           const { data: approvedUser } = await supabase
             .from('approved_users')
             .select('*')
@@ -50,12 +51,17 @@ function App() {
 
           if (approvedUser) {
             setUser(session.user)
-            
-            // 🚀 AVVIA LA MIGRAZIONE IN BACKGROUND
             migrateLocalStorageToSupabase(session.user)
             
+            // Sincronizza operazioni offline pending al login
+            syncPendingOperations(session.user).then(result => {
+              if (result.success > 0) {
+                console.log(`🔄 Sincronizzate ${result.success} operazioni offline al login`)
+              }
+            })
           } else {
             await supabase.auth.signOut()
+            setUser(null)
           }
         } else {
           setUser(null)
@@ -63,8 +69,25 @@ function App() {
       }
     )
 
-    return () => subscription.unsubscribe()
-  }, [])
+    // Listener per la riconnessione automatica
+    const handleOnline = async () => {
+      if (user) {
+        console.log('🌐 Connessione ripristinata, avvio sincronizzazione automatica...')
+        const result = await syncPendingOperations(user)
+        if (result.success > 0) {
+          console.log(`✅ Sincronizzate con successo ${result.success} operazioni`)
+        }
+      }
+    }
+    
+    window.addEventListener('online', handleOnline)
+
+    // Cleanup
+    return () => {
+      subscription.unsubscribe()
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [user])
 
   if (loading) {
     return (
@@ -86,6 +109,9 @@ function App() {
             Fitness App 🏋️
           </h1>
         </header>
+        
+        {/* Indicatore di stato connessione */}
+        <ConnectionStatus />
 
         <main>
           <Routes>
