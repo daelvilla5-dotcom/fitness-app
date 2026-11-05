@@ -43,28 +43,40 @@ function Dati({ user }) {
   const [showMeasurementInput, setShowMeasurementInput] = useState(false)
   const [editingMeasurement, setEditingMeasurement] = useState(null)
 
-  useEffect(() => {
-    if (user) {
-      const loadFromSupabase = async () => {
-        try {
-          const savedProfile = getUserProfile()
-          if (savedProfile) setProfile(savedProfile)
-          
-          const dbWeights = await loadWeightLogsDB(user.id)
-          setWeightLog(dbWeights.length > 0 ? dbWeights : getWeightLog())
-
-          const dbMeasurements = await loadMeasurementsDB(user.id)
-          setMeasurements(dbMeasurements.length > 0 ? dbMeasurements : getMeasurements())
-          
-        } catch (err) {
-          console.error('Errore caricamento da Supabase:', err)
-          setWeightLog(getWeightLog())
-          setMeasurements(getMeasurements())
-        }
+useEffect(() => {
+  if (user) {
+    const loadFromSupabase = async () => {
+      // Se offline, carica solo da localStorage
+      if (!navigator.onLine) {
+        console.log('📡 Offline: carica dati da localStorage')
+        const savedProfile = getUserProfile()
+        if (savedProfile) setProfile(savedProfile)
+        setWeightLog(getWeightLog())
+        setMeasurements(getMeasurements())
+        return
       }
-      loadFromSupabase()
+      
+      // Se online, prova a caricare da Supabase
+      try {
+        const savedProfile = getUserProfile()
+        if (savedProfile) setProfile(savedProfile)
+        
+        const dbWeights = await loadWeightLogsDB(user.id)
+        setWeightLog(dbWeights.length > 0 ? dbWeights : getWeightLog())
+
+        const dbMeasurements = await loadMeasurementsDB(user.id)
+        setMeasurements(dbMeasurements.length > 0 ? dbMeasurements : getMeasurements())
+        
+      } catch (err) {
+        console.error('Errore caricamento da Supabase:', err)
+        // Fallback su localStorage
+        setWeightLog(getWeightLog())
+        setMeasurements(getMeasurements())
+      }
     }
-  }, [user])
+    loadFromSupabase()
+  }
+}, [user])
 
   const handleLogout = async () => {
     if (!confirm('Sei sicuro di voler uscire dall\'account?')) return
