@@ -87,7 +87,7 @@ function App() {
             <Route path="/" element={<Panoramica />} />
             <Route path="/alimentazione" element={<Alimentazione />} />
             <Route path="/allenamento" element={<Allenamento />} />
-            <Route path="/dati" element={<Dati />} />
+            <Route path="/dati" element={<Dati user={user} />} />
           </Routes>
         </main>
 

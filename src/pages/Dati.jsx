@@ -17,8 +17,9 @@ import BodyFigure from '../components/BodyFigure'
 import MeasurementInput from '../components/MeasurementInput'
 import MeasurementChart from '../components/MeasurementChart'
 import DataBackup from '../components/DataBackup'
+import { supabase } from '../supabaseClient'
 
-function Dati() {
+function Dati({ user }) {
   const [activeTab, setActiveTab] = useState('anagrafica')
   const [profile, setProfile] = useState({
     genere: 'M',
@@ -44,6 +45,18 @@ function Dati() {
     setWeightLog(getWeightLog())
     setMeasurements(getMeasurements())
   }
+
+const handleLogout = async () => {
+  if (!confirm('Sei sicuro di voler uscire dall\'account?')) return
+  
+  try {
+    await supabase.auth.signOut()
+    window.location.reload()
+  } catch (err) {
+    console.error('Errore logout:', err)
+    alert('Errore durante il logout: ' + err.message)
+  }
+}
 
   const handleSaveProfile = () => {
     if (!profile.dataNascita || !profile.altezza) {
@@ -92,11 +105,12 @@ function Dati() {
   const averageWeight = getAverageWeight()
 
   const tabs = [
-    { id: 'anagrafica', label: 'Anagrafica', icon: '' },
-    { id: 'peso', label: 'Peso', icon: '⚖️' },
-    { id: 'misure', label: 'Misure', icon: '📏' },
-    { id: 'backup', label: 'Backup', icon: '💾' },
-  ]
+  { id: 'anagrafica', label: 'Anagrafica', icon: '' },
+  { id: 'peso', label: 'Peso', icon: '⚖️' },
+  { id: 'misure', label: 'Misure', icon: '📏' },
+  { id: 'backup', label: 'Backup', icon: '💾' },
+  { id: 'account', label: 'Account', icon: '👤' },
+]
 
   const areaLabels = {
     braccioDestro: 'Braccio Destro',
@@ -349,6 +363,37 @@ function Dati() {
 
       {/* Tab Backup */}
       {activeTab === 'backup' && <DataBackup />}
+
+{/* Tab Account */}
+{activeTab === 'account' && (
+  <div className="space-y-4">
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h3 className="text-lg font-semibold text-white mb-4">👤 Il tuo account</h3>
+      
+      <div className="bg-gray-800 rounded-lg p-4 mb-4">
+        <p className="text-sm text-gray-400 mb-1">Email</p>
+        <p className="text-electric font-semibold">{user?.email || 'Non disponibile'}</p>
+      </div>
+
+      <div className="bg-gray-800 rounded-lg p-4 mb-4">
+        <p className="text-sm text-gray-400 mb-1">Stato</p>
+        <p className="text-green-400 font-semibold">✓ Utente approvato</p>
+      </div>
+
+      <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
+        <p className="text-sm text-gray-400 mb-3">
+          ⚠️ Il logout ti riporterà alla schermata di accesso. Dovrai fare nuovamente il login con Google per entrare.
+        </p>
+        <button
+          onClick={handleLogout}
+          className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 active:scale-95 transition-all"
+        >
+          🚪 Esci dall'account
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
       {/* Modal inserimento misura */}
       {showMeasurementInput && editingMeasurement && (
