@@ -215,14 +215,23 @@ export async function deleteMeasurement(measurementId) {
 
 export async function loadUserProfile(userId) {
   try {
+    // Prima ottieni l'email dell'utente
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email
+    
+    if (!email) {
+      console.warn('Nessuna email trovata per loadUserProfile')
+      return null
+    }
+
     const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
-      .eq('user_id', userId)
+      .eq('email', email)  // ← Usa email, non user_id
       .single()
 
-    if (error) throw error
-    return data
+    if (error && error.code !== 'PGRST116') throw error
+    return data || null
   } catch (err) {
     console.error('Errore caricamento profilo:', err)
     return null
@@ -231,11 +240,11 @@ export async function loadUserProfile(userId) {
 
 export async function saveUserProfile(userId, profileData) {
   try {
-    // Controlla se esiste già (usando email invece di user_id)
+    // Usa l'email per identificare l'utente
     const { data: existing } = await supabase
       .from('user_profiles')
       .select('*')
-      .eq('email', profileData.email)
+      .eq('email', profileData.email)  // ← Cerca per email
       .single()
 
     if (existing) {
@@ -244,7 +253,7 @@ export async function saveUserProfile(userId, profileData) {
         .from('user_profiles')
         .update({
           genere: profileData.genere,
-          data_nascita: profileData.data_nascita,
+          data_nascita: profileData.dataNascita,
           altezza: profileData.altezza,
           eta: profileData.eta
         })
@@ -259,9 +268,9 @@ export async function saveUserProfile(userId, profileData) {
       const { data, error } = await supabase
         .from('user_profiles')
         .insert({
-          email: profileData.email,  // ← Usa email
+          email: profileData.email,  // ← Inserisci email
           genere: profileData.genere,
-          data_nascita: profileData.data_nascita,
+          data_nascita: profileData.dataNascita,
           altezza: profileData.altezza,
           eta: profileData.eta
         })
@@ -283,22 +292,13 @@ export async function saveUserProfile(userId, profileData) {
 
 export async function loadTargets(userId) {
   try {
-    // Prima ottieni l'email dell'utente
-    const { data: { user } } = await supabase.auth.getUser()
-    const email = user?.email
-    
-    if (!email) {
-      console.warn('Nessuna email trovata per loadTargets')
-      return null
-    }
-
     const { data, error } = await supabase
       .from('targets')
       .select('*')
-      .eq('email', email)  // ← Usa email invece di user_id
+      .eq('user_id', userId)  // ← Usa user_id (già corretto)
       .single()
 
-    if (error && error.code !== 'PGRST116') throw error // PGRST116 = nessuna riga
+    if (error && error.code !== 'PGRST116') throw error
     return data || null
   } catch (err) {
     console.error('Errore caricamento obiettivi:', err)
@@ -308,19 +308,11 @@ export async function loadTargets(userId) {
 
 export async function saveTargets(userId, targetsData) {
   try {
-    // Prima ottieni l'email dell'utente
-    const { data: { user } } = await supabase.auth.getUser()
-    const email = user?.email
-    
-    if (!email) {
-      throw new Error('Nessuna email trovata per saveTargets')
-    }
-
     // Controlla se esiste già
     const { data: existing } = await supabase
       .from('targets')
       .select('*')
-      .eq('email', email)  // ← Usa email invece di user_id
+      .eq('user_id', userId)  // ← Cerca per user_id
       .single()
 
     if (existing) {
@@ -336,7 +328,7 @@ export async function saveTargets(userId, targetsData) {
           attivita: targetsData.attivita,
           obiettivo: targetsData.obiettivo
         })
-        .eq('email', email)  // ← Usa email invece di user_id
+        .eq('user_id', userId)  // ← Usa user_id
         .select()
         .single()
 
@@ -347,7 +339,7 @@ export async function saveTargets(userId, targetsData) {
       const { data, error } = await supabase
         .from('targets')
         .insert({
-          email: email,  // ← Aggiungi email
+          user_id: userId,  // ← Inserisci user_id
           calories: targetsData.calories || 2000,
           pro: targetsData.pro || 150,
           carb: targetsData.carb || 250,
