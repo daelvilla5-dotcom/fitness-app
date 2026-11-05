@@ -3,7 +3,8 @@ import {
   loadRoutines as loadRoutinesDB,
   saveRoutine as saveRoutineDB,
   updateRoutine as updateRoutineDB,
-  deleteRoutine as deleteRoutineDB
+  deleteRoutine as deleteRoutineDB,
+  getOrCreateShareCode
 } from '../utils/supabaseData'
 import { getExercises } from '../utils/workoutDatabase'
 
@@ -14,6 +15,11 @@ function RoutineBuilder({ user, onStartWorkout }) {
   const [newRoutineName, setNewRoutineName] = useState('')
   const [editingDayId, setEditingDayId] = useState(null)
   const [editingDayName, setEditingDayName] = useState('')
+  
+  // Stati per la condivisione
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [shareLink, setShareLink] = useState('')
+  const [sharingRoutine, setSharingRoutine] = useState(null)
 
   useEffect(() => {
     setExercises(getExercises())
@@ -62,6 +68,20 @@ function RoutineBuilder({ user, onStartWorkout }) {
         console.error('Errore eliminazione scheda:', err)
         alert('Errore nell\'eliminazione della scheda')
       }
+    }
+  }
+
+  const handleShareRoutine = async (routine) => {
+    try {
+      const code = await getOrCreateShareCode(routine.id)
+      const baseUrl = window.location.origin + window.location.pathname
+      const link = `${baseUrl}?importa=${code}`
+      setShareLink(link)
+      setSharingRoutine(routine)
+      setShareModalOpen(true)
+    } catch (err) {
+      console.error('Errore condivisione:', err)
+      alert('Errore nella generazione del link di condivisione')
     }
   }
 
@@ -142,12 +162,22 @@ function RoutineBuilder({ user, onStartWorkout }) {
                     >
                       {r.name} <span className="text-xs text-gray-400">({r.days.length} giorni)</span>
                     </button>
-                    <button
-                      onClick={() => handleDeleteRoutine(r.id)}
-                      className="text-red-500 hover:text-red-400 ml-2"
-                    >
-                      🗑
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleShareRoutine(r)}
+                        className="text-blue-400 hover:text-blue-300 text-sm"
+                        title="Condividi scheda"
+                      >
+                        🔗
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRoutine(r.id)}
+                        className="text-red-500 hover:text-red-400"
+                        title="Elimina scheda"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -257,6 +287,38 @@ function RoutineBuilder({ user, onStartWorkout }) {
             + Aggiungi Giorno
           </button>
         </>
+      )}
+
+      {/* Modal Condivisione */}
+      {shareModalOpen && sharingRoutine && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold text-white mb-4">Condividi "{sharingRoutine.name}"</h3>
+            <p className="text-sm text-gray-400 mb-3">
+              Chiunque abbia questo link può importare questa scheda nel proprio account.
+            </p>
+            <div className="bg-gray-800 p-3 rounded-lg border border-border mb-4 break-all text-electric text-sm">
+              {shareLink}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareLink)
+                  alert('Link copiato negli appunti! 📋')
+                }}
+                className="flex-1 bg-electric text-black font-bold py-2 rounded-lg"
+              >
+                Copia Link
+              </button>
+              <button
+                onClick={() => setShareModalOpen(false)}
+                className="flex-1 bg-gray-700 text-white font-bold py-2 rounded-lg"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

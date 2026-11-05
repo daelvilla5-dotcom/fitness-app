@@ -443,6 +443,56 @@ export async function deleteRoutine(routineId) {
   }
 }
 
+// Genera o ottiene il codice di condivisione per una scheda
+export async function getOrCreateShareCode(routineId) {
+  try {
+    // Controlla se ha già un codice
+    const { data: existing } = await supabase
+      .from('routines')
+      .select('share_code, is_public')
+      .eq('id', routineId)
+      .single()
+
+    if (existing && existing.share_code) {
+      return existing.share_code
+    }
+
+    // Genera un codice casuale univoco (es. "R-8X9Y2Z")
+    const newShareCode = 'R-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+
+    const { data, error } = await supabase
+      .from('routines')
+      .update({ share_code: newShareCode, is_public: true })
+      .eq('id', routineId)
+      .select('share_code')
+      .single()
+
+    if (error) throw error
+    return data.share_code
+  } catch (err) {
+    console.error('Errore generazione codice condivisione:', err)
+    throw err
+  }
+}
+
+// Recupera una scheda pubblica tramite il suo codice di condivisione
+export async function getRoutineByShareCode(shareCode) {
+  try {
+    const { data, error } = await supabase
+      .from('routines')
+      .select('*')
+      .eq('share_code', shareCode)
+      .eq('is_public', true)
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore recupero scheda condivisa:', err)
+    return null
+  }
+}
+
 // ============================================
 // ALLENAMENTI SVOLTI (workout_logs)
 // ============================================

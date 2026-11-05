@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { HashRouter as Router, Routes, Route } from 'react-router-dom'
+import { HashRouter as Router, Routes, Route, useSearchParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import Login from './components/Login'
 import Navbar from './components/Navbar'
@@ -10,13 +10,18 @@ import Dati from './pages/Dati'
 import { migrateLocalStorageToSupabase } from './utils/migrateData'
 import ConnectionStatus from './components/ConnectionStatus'
 import { syncPendingOperations } from './utils/syncService'
+import { getRoutineByShareCode, saveRoutine } from './utils/supabaseData'
 
-// Chiave per salvare l'utente approvato in localStorage
 const APPROVED_USER_KEY = 'fitness_app_approved_user'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  
+  // Stati per la condivisione/importazione
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [importData, setImportData] = useState(null)
+  const [importLoading, setImportLoading] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -24,7 +29,6 @@ function App() {
     const initApp = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       
-      // Se offline, usa il fallback da localStorage
       if (!navigator.onLine) {
         console.log('📡 Offline: controllo fallback locale')
         const savedUser = localStorage.getItem(APPROVED_USER_KEY)
@@ -43,7 +47,6 @@ function App() {
         return
       }
       
-      // Se online, comportamento normale
       if (session) {
         const { data: approvedUser } = await supabase
           .from('approved_users')
@@ -53,7 +56,6 @@ function App() {
           .maybeSingle()
 
         if (approvedUser) {
-          // Salva l'utente in localStorage per uso offline futuro
           localStorage.setItem(APPROVED_USER_KEY, JSON.stringify(session.user))
           if (isMounted) setUser(session.user)
           migrateLocalStorageToSupabase(session.user)
@@ -69,7 +71,6 @@ function App() {
 
     initApp()
 
-    // Ascolta i cambiamenti di stato auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('Auth event:', event)
@@ -110,7 +111,6 @@ function App() {
       }
     )
 
-    // Listener per la riconnessione automatica
     const handleOnline = async () => {
       console.log('🌐 Connessione ripristinata, verifico sessione...')
       const { data: { session } } = await supabase.auth.getSession()
@@ -136,7 +136,6 @@ function App() {
           if (isMounted) setUser(null)
         }
       } else {
-        // Nessun session, controlla localStorage
         const savedUser = localStorage.getItem(APPROVED_USER_KEY)
         if (savedUser) {
           try {
@@ -148,13 +147,51 @@ function App() {
     
     window.addEventListener('online', handleOnline)
 
-    // Cleanup
     return () => {
       isMounted = false
       subscription.unsubscribe()
       window.removeEventListener('online', handleOnline)
     }
-  }, []) // ← RIMOSSO [user] per evitare loop
+  }, [])
+
+  // useEffect per gestire l'importazione da link condiviso
+  useEffect(() => {
+    const shareCode = searchParams.get('importa')
+    if (shareCode && user && !importData) {
+      setImportLoading(true)
+      getRoutineByShareCode(shareCode).then(routine => {
+        if (routine) {
+          setImportData(routine)
+        } else {
+          alert('Scheda non trovata o non più condivisa.')
+          setSearchParams({})
+        }
+        setImportLoading(false)
+      }).catch(() => {
+        setImportLoading(false)
+      })
+    }
+  }, [searchParams, user, importData])
+
+  const handleImportRoutine = async () => {
+    if (!importData || !user) return
+    setImportLoading(true)
+    try {
+      const newRoutine = {
+        name: `${importData.name} (Importata)`,
+        days: importData.days
+      }
+      await saveRoutine(user.id, newRoutine)
+      alert('✅ Scheda importata con successo! La trovi nella tab "Schede".')
+      setImportData(null)
+      setSearchParams({})
+    } catch (err) {
+      console.error('Errore importazione:', err)
+      alert('Errore durante l\'importazione della scheda.')
+    } finally {
+      setImportLoading(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -178,6 +215,38 @@ function App() {
         </header>
         
         <ConnectionStatus />
+
+        {/* Modal Importazione Scheda */}
+        {importData && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+            <div className="bg-card border border-electric rounded-lg p-6 max-w-md w-full">
+              <h3 className="text-lg font-bold text-electric mb-2">📥 Importa Scheda</h3>
+              <p className="text-white mb-1">È stata condivisa con te la scheda:</p>
+              <p className="text-xl font-bold text-white mb-4">"{importData.name}"</p>
+              <p className="text-sm text-gray-400 mb-6">
+                Verrà creata una copia nel tuo account. Potrai modificarla come preferisci.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleImportRoutine}
+                  disabled={importLoading}
+                  className="flex-1 bg-electric text-black font-bold py-3 rounded-lg disabled:opacity-50"
+                >
+                  {importLoading ? 'Importazione...' : 'Importa Scheda'}
+                </button>
+                <button
+                  onClick={() => {
+                    setImportData(null)
+                    setSearchParams({})
+                  }}
+                  className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-lg"
+                >
+                  Annulla
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <main>
           <Routes>
