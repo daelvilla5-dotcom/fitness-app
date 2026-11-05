@@ -16,6 +16,7 @@ import {
 import BodyFigure from '../components/BodyFigure'
 import MeasurementInput from '../components/MeasurementInput'
 import MeasurementChart from '../components/MeasurementChart'
+import DataBackup from '../components/DataBackup'
 
 function Dati() {
   const [activeTab, setActiveTab] = useState('anagrafica')
@@ -94,6 +95,7 @@ function Dati() {
     { id: 'anagrafica', label: 'Anagrafica', icon: '' },
     { id: 'peso', label: 'Peso', icon: '⚖️' },
     { id: 'misure', label: 'Misure', icon: '📏' },
+    { id: 'backup', label: 'Backup', icon: '💾' },
   ]
 
   const areaLabels = {
@@ -344,6 +346,9 @@ function Dati() {
           )}
         </div>
       )}
+
+      {/* Tab Backup */}
+      {activeTab === 'backup' && <DataBackup />}
 
       {/* Modal inserimento misura */}
       {showMeasurementInput && editingMeasurement && (

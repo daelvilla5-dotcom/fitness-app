@@ -1,4 +1,7 @@
+import { useState, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { supabase } from './supabaseClient'
+import Login from './components/Login'
 import Navbar from './components/Navbar'
 import Panoramica from './pages/Panoramica'
 import Alimentazione from './pages/Alimentazione'
@@ -6,6 +9,70 @@ import Allenamento from './pages/Allenamento'
 import Dati from './pages/Dati'
 
 function App() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Controlla se c'è una sessione attiva all'avvio
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        // Verifica se l'email è approvata
+        const { data: approvedUser } = await supabase
+          .from('approved_users')
+          .select('*')
+          .eq('email', session.user.email)
+          .eq('attivo', true)
+          .single()
+
+        if (approvedUser) {
+          setUser(session.user)
+        } else {
+          // Email non approvata → logout
+          await supabase.auth.signOut()
+          setUser(null)
+        }
+      }
+      setLoading(false)
+    })
+
+    // Ascolta i cambiamenti di stato auth (login/logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session) {
+          const { data: approvedUser } = await supabase
+            .from('approved_users')
+            .select('*')
+            .eq('email', session.user.email)
+            .eq('attivo', true)
+            .single()
+
+          if (approvedUser) {
+            setUser(session.user)
+          } else {
+            await supabase.auth.signOut()
+            setUser(null)
+          }
+        } else {
+          setUser(null)
+        }
+      }
+    )
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="text-electric text-xl">Caricamento...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Login onLoginSuccess={setUser} />
+  }
+
   return (
     <Router>
       <div className="min-h-screen bg-bg pb-20">

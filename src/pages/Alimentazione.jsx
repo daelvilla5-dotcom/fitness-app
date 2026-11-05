@@ -69,13 +69,22 @@ function Alimentazione() {
   }
 
   const handleStartNewDay = () => {
-    if (activeDay && activeDay.isActive) {
-      if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
-      endCurrentDay()
+  if (activeDay && activeDay.isActive) {
+    if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
+    
+    // Backup automatico prima di chiudere il giorno
+    const { downloadBackup } = require('../utils/dataManager')
+    try {
+      downloadBackup()
+    } catch (err) {
+      console.log('Backup automatico fallito:', err)
     }
-    startNewDay()
-    loadData()
+    
+    endCurrentDay()
   }
+  startNewDay()
+  loadData()
+}
 
   const calcolaFabbisogno = () => {
     if (!profile) {
