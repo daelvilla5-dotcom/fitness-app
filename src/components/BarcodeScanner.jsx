@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 
 function BarcodeScanner({ onProductFound, onClose }) {
-  const [mode, setMode] = useState('choice')
-  const [scanning, setScanning] = useState(false)
+  const [mode, setMode] = useState('choice') // 'choice' | 'camera' | 'searching'
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
+  const [lastScannedCode, setLastScannedCode] = useState('')
   const html5QrCodeRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -21,15 +21,12 @@ function BarcodeScanner({ onProductFound, onClose }) {
   const startCamera = async () => {
     setError('')
     setMode('camera')
-    setScanning(true)
 
     try {
       // Richiedi prima i permessi in modo esplicito
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' } 
       })
-      
-      // Ferma lo stream subito, ci serve solo per ottenere il permesso
       stream.getTracks().forEach(track => track.stop())
 
       const html5QrCode = new Html5Qrcode("barcode-reader")
@@ -39,7 +36,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
       
       if (!devices || devices.length === 0) {
         setError('Nessuna fotocamera trovata.')
-        setScanning(false)
         setMode('choice')
         return
       }
@@ -71,11 +67,10 @@ function BarcodeScanner({ onProductFound, onClose }) {
       } else if (err.name === 'NotReadableError') {
         msg = 'Fotocamera occupata da un\'altra app. Chiudila e riprova.'
       } else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-        msg = 'La fotocamera richiede HTTPS. Usa l\'opzione "Carica Immagine" o "Inserisci Manualmente".'
+        msg = 'La fotocamera richiede HTTPS. Usa "Carica Immagine" o "Inserisci Manualmente".'
       }
       
       setError(msg)
-      setScanning(false)
       setMode('choice')
     }
   }
@@ -87,13 +82,17 @@ function BarcodeScanner({ onProductFound, onClose }) {
         html5QrCodeRef.current.clear()
       } catch (err) {}
     }
-    setScanning(false)
-    setMode('choice')
   }
 
+  // FIX: quando scansiona, NON smonta la fotocamera subito
+  // Mostra invece uno stato di "ricerca" mantenendo l'interfaccia visibile
   const onScanSuccess = async (decodedText) => {
+    // Ferma lo scanner ma NON cambiare mode
     await stopCamera()
-    await lookupProduct(decodedText)
+    setLastScannedCode(decodedText)
+    setSearching(true)
+    setError('')
+    // Mode rimane 'camera' così l'interfaccia non viene smontata
   }
 
   const handleImageUpload = async (e) => {
@@ -102,15 +101,17 @@ function BarcodeScanner({ onProductFound, onClose }) {
 
     setSearching(true)
     setError('')
+    setLastScannedCode('')
 
     try {
       const html5QrCode = new Html5Qrcode("barcode-reader-hidden")
       const decodedText = await html5QrCode.scanFile(file, true)
       
       if (decodedText) {
+        setLastScannedCode(decodedText)
         await lookupProduct(decodedText)
       } else {
-        setError('Nessun codice a barre trovato nell\'immagine.\nProva con un\'immagine più nitida del codice.')
+        setError('Nessun codice a barre trovato nell\'immagine.\nProva con un\'immagine più nitida.')
         setSearching(false)
       }
     } catch (err) {
@@ -119,7 +120,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
       setSearching(false)
     }
     
-    // Resetta l'input per poter caricare la stessa immagine due volte
     e.target.value = ''
   }
 
@@ -150,23 +150,36 @@ function BarcodeScanner({ onProductFound, onClose }) {
           fib: nutriments.fiber_100g || 0,
         }
 
+        // FIX: piccola pausa per evitare race condition con lo smontaggio
+        await new Promise(resolve => setTimeout(resolve, 300))
         onProductFound(nutritionData)
       } else {
-        setError(`Codice trovato: ${barcode}\nProdotto non presente nel database OpenFoodFacts.\nProva con un altro prodotto o inserisci manualmente.`)
+        setError(`Codice trovato: ${barcode}\nProdotto non presente nel database OpenFoodFacts.\nProva con un altro prodotto.`)
         setSearching(false)
+        setMode('choice')
       }
     } catch (err) {
       console.error('Errore API:', err)
       setError('Errore di connessione. Controlla la rete e riprova.')
       setSearching(false)
+      setMode('choice')
     }
   }
 
   const handleManualInput = () => {
     const barcode = prompt('Inserisci il codice a barre (13 cifre):')
     if (barcode && barcode.trim()) {
+      setLastScannedCode(barcode.trim())
       lookupProduct(barcode.trim())
     }
+  }
+
+  const handleBackToChoice = async () => {
+    await stopCamera()
+    setMode('choice')
+    setSearching(false)
+    setError('')
+    setLastScannedCode('')
   }
 
   return (
@@ -180,7 +193,21 @@ function BarcodeScanner({ onProductFound, onClose }) {
         </div>
 
         <div className="space-y-4">
-          {/* Scelta modalità */}
+          {/* STATO: Ricerca in corso (dopo scansione live o upload) */}
+          {searching && (
+            <div className="bg-electric/10 border border-electric rounded-lg p-6 text-center">
+              <p className="text-4xl mb-3">🔍</p>
+              <p className="text-electric font-semibold mb-2">Ricerca prodotto...</p>
+              {lastScannedCode && (
+                <p className="text-xs text-gray-400 mb-3">Codice: {lastScannedCode}</p>
+              )}
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="bg-electric h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+              </div>
+            </div>
+          )}
+
+          {/* STATO: Scelta modalità (solo se non sta cercando) */}
           {mode === 'choice' && !searching && (
             <>
               <div className="bg-gray-900 rounded-lg p-6 text-center border border-border">
@@ -212,7 +239,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
                   </button>
                 </div>
 
-                {/* FIX: rimosso capture="environment" per permettere la scelta galleria/fotocamera */}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -228,36 +254,33 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </>
           )}
 
-          {/* Modalità fotocamera */}
-          {mode === 'camera' && (
+          {/* STATO: Fotocamera attiva */}
+          {mode === 'camera' && !searching && (
             <div className="space-y-3">
               <div className="bg-gray-900 rounded-lg overflow-hidden border border-border">
                 <div id="barcode-reader" className="w-full min-h-[300px]"></div>
               </div>
               
               <button
-                onClick={stopCamera}
+                onClick={handleBackToChoice}
                 className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
               >
-                ✕ Ferma Fotocamera
+                ✕ Torna alla scelta
               </button>
             </div>
           )}
 
           <div id="barcode-reader-hidden" className="hidden"></div>
 
-          {searching && (
-            <div className="bg-electric/10 border border-electric rounded-lg p-4 text-center">
-              <p className="text-electric font-semibold mb-2">🔍 Ricerca prodotto...</p>
-              <div className="w-full bg-gray-700 rounded-full h-2">
-                <div className="bg-electric h-2 rounded-full animate-pulse" style={{ width: '100%' }}></div>
-              </div>
-            </div>
-          )}
-
           {error && (
             <div className="bg-red-500/10 border border-red-500 rounded-lg p-3">
               <p className="text-red-400 text-sm whitespace-pre-wrap">{error}</p>
+              <button
+                onClick={handleBackToChoice}
+                className="mt-2 text-xs text-electric underline"
+              >
+                Torna alla scelta modalità
+              </button>
             </div>
           )}
         </div>
