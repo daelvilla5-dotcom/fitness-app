@@ -44,12 +44,22 @@ function Login({ onLoginSuccess }) {
       setLoading(true)
       setError('')
 
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      })
+      // Determina l'URL di reindirizzamento in base all'ambiente
+const redirectUrl = window.location.hostname === 'localhost' 
+  ? 'http://localhost:5173' 
+  : window.location.origin
+
+// URL di reindirizzamento esplicito
+const redirectTo = window.location.hostname.includes('vercel.app')
+  ? 'https://fitness-app-chi-bice.vercel.app'
+  : 'http://localhost:5173'
+
+const { error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: redirectTo,
+  },
+})
 
       if (error) throw error
     } catch (err) {
