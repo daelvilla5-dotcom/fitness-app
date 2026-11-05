@@ -85,7 +85,7 @@ function App() {
         <main>
           <Routes>
             <Route path="/" element={<Panoramica />} />
-            <Route path="/alimentazione" element={<Alimentazione />} />
+            <Route path="/alimentazione" element={<Alimentazione user={user} />} />
             <Route path="/allenamento" element={<Allenamento />} />
             <Route path="/dati" element={<Dati user={user} />} />
           </Routes>

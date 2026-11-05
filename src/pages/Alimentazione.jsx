@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import FoodItem from '../components/FoodItem'
 import AddFoodModal from '../components/AddFoodModal'
+import { loadFoods, saveFood, updateFood, deleteFood } from '../utils/supabaseData'
 import {
   getFoods,
   saveFood,
@@ -24,7 +25,7 @@ import {
   updatePreset,
 } from '../utils/userData'
 
-function Alimentazione() {
+function Alimentazione({ user }) {
   const [activeTab, setActiveTab] = useState('pasti')
   const [showAddFoodModal, setShowAddFoodModal] = useState(false)
   const [editingFood, setEditingFood] = useState(null)
@@ -51,6 +52,35 @@ function Alimentazione() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Carica alimenti da Supabase all'avvio
+useEffect(() => {
+  if (user) {
+    const loadFromSupabase = async () => {
+      try {
+        const supabaseFoods = await loadFoods(user.id)
+        if (supabaseFoods.length > 0) {
+          // Se ci sono dati su Supabase, usa quelli
+          setFoods(supabaseFoods)
+          console.log('✅ Alimenti caricati da Supabase:', supabaseFoods.length)
+        } else {
+          // Altrimenti carica da localStorage (fallback)
+          const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
+          if (localFoods.length > 0) {
+            setFoods(localFoods)
+            console.log('📦 Alimenti caricati da localStorage:', localFoods.length)
+          }
+        }
+      } catch (err) {
+        console.error('Errore caricamento da Supabase:', err)
+        // Fallback su localStorage
+        const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
+        setFoods(localFoods)
+      }
+    }
+    loadFromSupabase()
+  }
+}, [user])
 
   const loadData = () => {
     setFoods(getFoods())
@@ -165,21 +195,50 @@ function Alimentazione() {
     updatePreset(obiettivo, newMultipliers)
   }
 
-  const handleSaveFood = (food) => {
-    if (editingFood) {
-      setFoods(updateFood(food))
-    } else {
-      setFoods(saveFood(food))
-    }
-    setShowAddFoodModal(false)
-    setEditingFood(null)
+  const handleSaveFood = async (foodData) => {
+  try {
+    // Salva su Supabase
+    const savedFood = await saveFood(user.id, foodData)
+    
+    // Aggiorna lo stato locale
+    setFoods([...foods, savedFood])
+    
+    // Salva anche su localStorage (backup)
+    const updatedFoods = [...foods, savedFood]
+    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    
+    console.log('✅ Alimento salvato su Supabase:', savedFood.name)
+  } catch (err) {
+    console.error('Errore salvataggio su Supabase:', err)
+    // Fallback: salva solo su localStorage
+    const newFood = { ...foodData, id: Date.now().toString() }
+    const updatedFoods = [...foods, newFood]
+    setFoods(updatedFoods)
+    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
   }
+}
 
-  const handleDeleteFood = (foodId) => {
-    if (confirm('Eliminare questo alimento?')) {
-      setFoods(deleteFood(foodId))
-    }
+  const handleDeleteFood = async (foodId) => {
+  if (!confirm('Eliminare questo alimento?')) return
+  
+  try {
+    // Elimina da Supabase
+    await deleteFood(foodId)
+    
+    // Aggiorna stato locale
+    const updatedFoods = foods.filter(f => f.id !== foodId)
+    setFoods(updatedFoods)
+    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    
+    console.log('✅ Alimento eliminato da Supabase')
+  } catch (err) {
+    console.error('Errore eliminazione da Supabase:', err)
+    // Fallback: elimina solo da localStorage
+    const updatedFoods = foods.filter(f => f.id !== foodId)
+    setFoods(updatedFoods)
+    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
   }
+}
 
   const handleEditFood = (food) => {
     setEditingFood(food)
