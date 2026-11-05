@@ -23,6 +23,7 @@ import {
   loadMeasurements as loadMeasurementsDB,
   saveMeasurement as saveMeasurementDB,
   deleteMeasurement as deleteMeasurementDB,
+  saveUserProfile as saveUserProfileDB,
 } from '../utils/supabaseData'
 
 function Dati({ user }) {
@@ -54,7 +55,6 @@ function Dati({ user }) {
           const dbMeasurements = await loadMeasurementsDB(user.id)
           setMeasurements(dbMeasurements.length > 0 ? dbMeasurements : getMeasurements())
           
-          console.log('✅ Dati caricati da Supabase')
         } catch (err) {
           console.error('Errore caricamento da Supabase:', err)
           setWeightLog(getWeightLog())
@@ -93,7 +93,6 @@ function Dati({ user }) {
       saveUserProfile(profileWithAge)
       setProfile(profileWithAge)
       alert('Profilo salvato! ✅')
-      console.log('✅ Profilo salvato su Supabase')
     } catch (err) {
       console.error('Errore salvataggio profilo:', err)
       saveUserProfile(profileWithAge)
@@ -121,7 +120,6 @@ function Dati({ user }) {
       setWeightLog(updatedLog)
       localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
       
-      console.log('✅ Pesata salvata su Supabase')
     } catch (err) {
       console.error('Errore salvataggio pesata:', err)
       alert('Errore nel salvataggio della pesata')
