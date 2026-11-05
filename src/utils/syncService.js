@@ -1,15 +1,15 @@
 import { 
-  saveFoodDB,
-  saveWeightLogDB,
-  saveMeasurementDB,
-  saveRoutineDB,
-  saveWorkoutLogDB,
-  saveUserProfileDB,
-  deleteFoodDB,
-  deleteWeightLogDB,
-  deleteMeasurementDB,
-  deleteRoutineDB,
-  deleteWorkoutLogDB
+  saveFood,
+  saveWeightLog,
+  saveMeasurement,
+  saveRoutine,
+  saveWorkoutLog,
+  saveUserProfile,
+  deleteFood,
+  deleteWeightLog,
+  deleteMeasurement,
+  deleteRoutine,
+  deleteWorkoutLog
 } from './supabaseData'
 import {
   getPendingOperations,
@@ -18,22 +18,22 @@ import {
   isOnline
 } from './offlineQueue'
 
-// Mappa le operazioni alle funzioni corrispondenti
+// Mappa le operazioni alle funzioni corrispondenti (nomi originali senza DB)
 const operationHandlers = {
   // CREATE
-  'CREATE_FOOD': (op, userId) => saveFoodDB(userId, op.data),
-  'CREATE_WEIGHT': (op, userId) => saveWeightLogDB(userId, op.data.weight, op.data.date),
-  'CREATE_MEASUREMENT': (op, userId) => saveMeasurementDB(userId, op.data),
-  'CREATE_ROUTINE': (op, userId) => saveRoutineDB(userId, op.data),
-  'CREATE_WORKOUT': (op, userId) => saveWorkoutLogDB(userId, op.data),
-  'CREATE_PROFILE': (op, userId) => saveUserProfileDB(userId, op.data),
+  'CREATE_FOOD': (op, userId) => saveFood(userId, op.data),
+  'CREATE_WEIGHT': (op, userId) => saveWeightLog(userId, op.data.weight, op.data.date),
+  'CREATE_MEASUREMENT': (op, userId) => saveMeasurement(userId, op.data),
+  'CREATE_ROUTINE': (op, userId) => saveRoutine(userId, op.data),
+  'CREATE_WORKOUT': (op, userId) => saveWorkoutLog(userId, op.data),
+  'CREATE_PROFILE': (op, userId) => saveUserProfile(userId, op.data),
   
   // DELETE
-  'DELETE_FOOD': (op) => deleteFoodDB(op.data.id),
-  'DELETE_WEIGHT': (op) => deleteWeightLogDB(op.data.id),
-  'DELETE_MEASUREMENT': (op) => deleteMeasurementDB(op.data.id),
-  'DELETE_ROUTINE': (op) => deleteRoutineDB(op.data.id),
-  'DELETE_WORKOUT': (op) => deleteWorkoutLogDB(op.data.id),
+  'DELETE_FOOD': (op) => deleteFood(op.data.id),
+  'DELETE_WEIGHT': (op) => deleteWeightLog(op.data.id),
+  'DELETE_MEASUREMENT': (op) => deleteMeasurement(op.data.id),
+  'DELETE_ROUTINE': (op) => deleteRoutine(op.data.id),
+  'DELETE_WORKOUT': (op) => deleteWorkoutLog(op.data.id),
 }
 
 // Sincronizza tutte le operazioni in coda
