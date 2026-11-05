@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
-import { getRoutines, saveRoutine, deleteRoutine as dbDeleteRoutine, getExercises, getWorkoutLogs } from '../utils/workoutDatabase'
+import { 
+  loadRoutines as loadRoutinesDB,
+  saveRoutine as saveRoutineDB,
+  updateRoutine as updateRoutineDB,
+  deleteRoutine as deleteRoutineDB
+} from '../utils/supabaseData'
+import { getExercises } from '../utils/workoutDatabase'
 
-function RoutineBuilder({ onStartWorkout }) {
+function RoutineBuilder({ user, onStartWorkout }) {
   const [routines, setRoutines] = useState([])
   const [exercises, setExercises] = useState([])
   const [activeRoutine, setActiveRoutine] = useState(null)
@@ -10,25 +16,59 @@ function RoutineBuilder({ onStartWorkout }) {
   const [editingDayName, setEditingDayName] = useState('')
 
   useEffect(() => {
-    setRoutines(getRoutines())
     setExercises(getExercises())
-  }, [])
+    if (user) {
+      loadRoutinesDB(user.id).then(dbRoutines => {
+        setRoutines(dbRoutines)
+      }).catch(err => console.error('Errore caricamento schede:', err))
+    }
+  }, [user])
 
-  const createRoutine = () => {
-    if (!newRoutineName) return
-    const newRoutine = { id: null, name: newRoutineName, days: [] }
-    const updated = saveRoutine(newRoutine)
-    setRoutines(updated)
-    setActiveRoutine(updated.find(r => r.name === newRoutineName))
-    setNewRoutineName('')
+  const createRoutine = async () => {
+    if (!newRoutineName || !user) return
+    try {
+      const saved = await saveRoutineDB(user.id, { name: newRoutineName, days: [] })
+      setRoutines([...routines, saved])
+      setActiveRoutine(saved)
+      setNewRoutineName('')
+    } catch (err) {
+      console.error('Errore creazione scheda:', err)
+      alert('Errore nel salvataggio della scheda')
+    }
+  }
+
+  const updateActiveRoutine = async (updatedRoutine) => {
+    setActiveRoutine(updatedRoutine)
+    try {
+      const saved = await updateRoutineDB(updatedRoutine.id, {
+        name: updatedRoutine.name,
+        days: updatedRoutine.days
+      })
+      setRoutines(routines.map(r => r.id === saved.id ? saved : r))
+    } catch (err) {
+      console.error('Errore aggiornamento scheda:', err)
+      alert('Errore nell\'aggiornamento della scheda')
+    }
+  }
+
+  const handleDeleteRoutine = async (id) => {
+    if (confirm('Eliminare questa scheda?')) {
+      try {
+        await deleteRoutineDB(id)
+        const updated = routines.filter(r => r.id !== id)
+        setRoutines(updated)
+        if (activeRoutine?.id === id) setActiveRoutine(null)
+      } catch (err) {
+        console.error('Errore eliminazione scheda:', err)
+        alert('Errore nell\'eliminazione della scheda')
+      }
+    }
   }
 
   const addDay = () => {
     if (!activeRoutine) return
     const newDay = { id: Date.now(), name: `Giorno ${activeRoutine.days.length + 1}`, exercises: [] }
-    const updatedRoutine = { ...activeRoutine, days: [...activeRoutine.days, newDay] }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: [...activeRoutine.days, newDay] })
   }
 
   const duplicateDay = (dayIndex) => {
@@ -37,45 +77,27 @@ function RoutineBuilder({ onStartWorkout }) {
     const newDay = { ...dayToCopy, id: Date.now(), name: `${dayToCopy.name} (Copia)` }
     const newDays = [...activeRoutine.days]
     newDays.splice(dayIndex + 1, 0, newDay)
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
-  // FIX: rinominata per evitare conflitto con l'import
-  const handleDeleteRoutine = (id) => {
-    if (confirm('Eliminare questa scheda?')) {
-      const updated = dbDeleteRoutine(id)
-      setRoutines(updated)
-      setActiveRoutine(null)
-    }
-  }
-
-  // Nuova funzione: inizia editing nome giorno
   const startEditDayName = (day) => {
     setEditingDayId(day.id)
     setEditingDayName(day.name)
   }
 
-  // Nuova funzione: salva nome giorno modificato
   const saveDayName = (dayIndex) => {
     if (!editingDayName.trim()) return
     const newDays = [...activeRoutine.days]
     newDays[dayIndex].name = editingDayName
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
     setEditingDayId(null)
     setEditingDayName('')
   }
 
-  // Nuova funzione: cancella giorno
   const deleteDay = (dayIndex) => {
     if (!confirm(`Eliminare "${activeRoutine.days[dayIndex].name}"?`)) return
     const newDays = activeRoutine.days.filter((_, idx) => idx !== dayIndex)
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   const addExerciseToDay = (dayIndex, exercise) => {
@@ -87,32 +109,25 @@ function RoutineBuilder({ onStartWorkout }) {
       targetSets: 3,
       targetReps: 12
     })
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   const updateExerciseTarget = (dayIndex, exIndex, field, value) => {
     const newDays = [...activeRoutine.days]
     newDays[dayIndex].exercises[exIndex][field] = Number(value)
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   const removeExerciseFromDay = (dayIndex, exIndex) => {
     const newDays = [...activeRoutine.days]
     newDays[dayIndex].exercises.splice(exIndex, 1)
-    const updatedRoutine = { ...activeRoutine, days: newDays }
-    setActiveRoutine(updatedRoutine)
-    setRoutines(saveRoutine(updatedRoutine))
+    updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   return (
     <div className="space-y-4">
       {!activeRoutine ? (
         <>
-          {/* Lista Schede */}
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Le tue Schede</h3>
             {routines.length === 0 ? (
@@ -139,7 +154,6 @@ function RoutineBuilder({ onStartWorkout }) {
             )}
           </div>
 
-          {/* Crea nuova scheda */}
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Crea Nuova Scheda</h3>
             <div className="flex gap-2">
@@ -161,12 +175,8 @@ function RoutineBuilder({ onStartWorkout }) {
         </>
       ) : (
         <>
-          {/* Editor Scheda */}
           <div className="flex justify-between items-center mb-2">
-            <button
-              onClick={() => setActiveRoutine(null)}
-              className="text-electric text-sm font-semibold"
-            >
+            <button onClick={() => setActiveRoutine(null)} className="text-electric text-sm font-semibold">
               ← Torna alle schede
             </button>
             <h3 className="text-lg font-bold text-white">{activeRoutine.name}</h3>
@@ -175,7 +185,6 @@ function RoutineBuilder({ onStartWorkout }) {
           {activeRoutine.days.map((day, dayIndex) => (
             <div key={day.id} className="bg-card border border-border rounded-lg p-4 mb-4">
               <div className="flex justify-between items-center mb-3">
-                {/* Nome giorno cliccabile per rinominare */}
                 {editingDayId === day.id ? (
                   <div className="flex items-center gap-2 flex-1">
                     <input
@@ -186,18 +195,8 @@ function RoutineBuilder({ onStartWorkout }) {
                       autoFocus
                       onKeyDown={(e) => e.key === 'Enter' && saveDayName(dayIndex)}
                     />
-                    <button
-                      onClick={() => saveDayName(dayIndex)}
-                      className="text-electric text-xs font-bold"
-                    >
-                      ✓
-                    </button>
-                    <button
-                      onClick={() => setEditingDayId(null)}
-                      className="text-gray-400 text-xs"
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => saveDayName(dayIndex)} className="text-electric text-xs font-bold">✓</button>
+                    <button onClick={() => setEditingDayId(null)} className="text-gray-400 text-xs">✕</button>
                   </div>
                 ) : (
                   <h4
@@ -209,65 +208,33 @@ function RoutineBuilder({ onStartWorkout }) {
                   </h4>
                 )}
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => deleteDay(dayIndex)}
-                    className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30"
-                  >
-                    🗑 Elimina
-                  </button>
-                  <button
-                    onClick={() => duplicateDay(dayIndex)}
-                    className="text-xs bg-gray-700 text-white px-2 py-1 rounded"
-                  >
-                    Duplica
-                  </button>
-                  <button
-                    onClick={() => onStartWorkout && onStartWorkout(activeRoutine, dayIndex)}
-                    className="text-xs bg-electric text-black font-bold px-3 py-1 rounded"
-                  >
-                    Inizia
-                  </button>
+                  <button onClick={() => deleteDay(dayIndex)} className="text-xs bg-red-500/20 text-red-400 px-2 py-1 rounded hover:bg-red-500/30">🗑 Elimina</button>
+                  <button onClick={() => duplicateDay(dayIndex)} className="text-xs bg-gray-700 text-white px-2 py-1 rounded">Duplica</button>
+                  <button onClick={() => onStartWorkout && onStartWorkout(activeRoutine, dayIndex)} className="text-xs bg-electric text-black font-bold px-3 py-1 rounded">Inizia</button>
                 </div>
               </div>
 
-              {/* Esercizi nel giorno */}
               <div className="space-y-2 mb-3">
                 {day.exercises.map((ex, exIndex) => (
                   <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-white font-semibold">{ex.name}</span>
-                      <button
-                        onClick={() => removeExerciseFromDay(dayIndex, exIndex)}
-                        className="text-red-500 text-sm"
-                      >
-                        ✕
-                      </button>
+                      <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
                     </div>
                     <div className="flex gap-2">
                       <div className="flex-1">
                         <label className="text-xs text-gray-400">Serie</label>
-                        <input
-                          type="number"
-                          value={ex.targetSets}
-                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)}
-                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm"
-                        />
+                        <input type="number" value={ex.targetSets} onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" />
                       </div>
                       <div className="flex-1">
                         <label className="text-xs text-gray-400">Reps</label>
-                        <input
-                          type="number"
-                          value={ex.targetReps}
-                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)}
-                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm"
-                        />
+                        <input type="number" value={ex.targetReps} onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" />
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Aggiungi esercizio al giorno */}
               <select
                 onChange={(e) => {
                   const ex = exercises.find(ex => ex.id === Number(e.target.value))
@@ -286,10 +253,7 @@ function RoutineBuilder({ onStartWorkout }) {
             </div>
           ))}
 
-          <button
-            onClick={addDay}
-            className="w-full bg-gray-800 border border-dashed border-border text-electric font-semibold py-3 rounded-lg"
-          >
+          <button onClick={addDay} className="w-full bg-gray-800 border border-dashed border-border text-electric font-semibold py-3 rounded-lg">
             + Aggiungi Giorno
           </button>
         </>

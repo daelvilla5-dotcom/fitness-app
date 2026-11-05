@@ -7,6 +7,7 @@ import Panoramica from './pages/Panoramica'
 import Alimentazione from './pages/Alimentazione'
 import Allenamento from './pages/Allenamento'
 import Dati from './pages/Dati'
+import { migrateLocalStorageToSupabase } from './utils/migrateData'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -38,19 +39,25 @@ function App() {
     // Ascolta i cambiamenti di stato auth (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session) {
+                if (session) {
+          console.log('App: Sessione trovata', session.user.email)
+          
           const { data: approvedUser } = await supabase
             .from('approved_users')
             .select('*')
             .eq('email', session.user.email)
             .eq('attivo', true)
-            .single()
+            .maybeSingle()
 
           if (approvedUser) {
             setUser(session.user)
+            
+            // 🚀 AVVIA LA MIGRAZIONE IN BACKGROUND
+            migrateLocalStorageToSupabase(session.user)
+            
           } else {
+            console.log('App: Utente non approvato')
             await supabase.auth.signOut()
-            setUser(null)
           }
         } else {
           setUser(null)
@@ -86,7 +93,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Panoramica />} />
             <Route path="/alimentazione" element={<Alimentazione user={user} />} />
-            <Route path="/allenamento" element={<Allenamento />} />
+            <Route path="/allenamento" element={<Allenamento user={user} />} />
             <Route path="/dati" element={<Dati user={user} />} />
           </Routes>
         </main>

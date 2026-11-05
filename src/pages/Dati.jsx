@@ -4,8 +4,6 @@ import {
   saveUserProfile,
   calculateAge,
   getWeightLog,
-  addWeightEntry,
-  deleteWeightEntry,
   getAverageWeight,
   getMeasurements,
   saveMeasurements,
@@ -18,6 +16,14 @@ import MeasurementInput from '../components/MeasurementInput'
 import MeasurementChart from '../components/MeasurementChart'
 import DataBackup from '../components/DataBackup'
 import { supabase } from '../supabaseClient'
+import { 
+  loadWeightLogs as loadWeightLogsDB, 
+  saveWeightLog as saveWeightLogDB, 
+  deleteWeightLog as deleteWeightLogDB,
+  loadMeasurements as loadMeasurementsDB,
+  saveMeasurement as saveMeasurementDB,
+  deleteMeasurement as deleteMeasurementDB,
+} from '../utils/supabaseData'
 
 function Dati({ user }) {
   const [activeTab, setActiveTab] = useState('anagrafica')
@@ -33,32 +39,45 @@ function Dati({ user }) {
   // Stato per la sagoma
   const [selectedArea, setSelectedArea] = useState(null)
   const [showMeasurementInput, setShowMeasurementInput] = useState(false)
-  const [editingMeasurement, setEditingMeasurement] = useState(null) // { area, date, value }
+  const [editingMeasurement, setEditingMeasurement] = useState(null)
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (user) {
+      const loadFromSupabase = async () => {
+        try {
+          const savedProfile = getUserProfile()
+          if (savedProfile) setProfile(savedProfile)
+          
+          const dbWeights = await loadWeightLogsDB(user.id)
+          setWeightLog(dbWeights.length > 0 ? dbWeights : getWeightLog())
 
-  const loadData = () => {
-    const savedProfile = getUserProfile()
-    if (savedProfile) setProfile(savedProfile)
-    setWeightLog(getWeightLog())
-    setMeasurements(getMeasurements())
+          const dbMeasurements = await loadMeasurementsDB(user.id)
+          setMeasurements(dbMeasurements.length > 0 ? dbMeasurements : getMeasurements())
+          
+          console.log('✅ Dati caricati da Supabase')
+        } catch (err) {
+          console.error('Errore caricamento da Supabase:', err)
+          setWeightLog(getWeightLog())
+          setMeasurements(getMeasurements())
+        }
+      }
+      loadFromSupabase()
+    }
+  }, [user])
+
+  const handleLogout = async () => {
+    if (!confirm('Sei sicuro di voler uscire dall\'account?')) return
+    
+    try {
+      await supabase.auth.signOut()
+      window.location.reload()
+    } catch (err) {
+      console.error('Errore logout:', err)
+      alert('Errore durante il logout: ' + err.message)
+    }
   }
 
-const handleLogout = async () => {
-  if (!confirm('Sei sicuro di voler uscire dall\'account?')) return
-  
-  try {
-    await supabase.auth.signOut()
-    window.location.reload()
-  } catch (err) {
-    console.error('Errore logout:', err)
-    alert('Errore durante il logout: ' + err.message)
-  }
-}
-
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!profile.dataNascita || !profile.altezza) {
       alert('Compila tutti i campi!')
       return
@@ -66,19 +85,62 @@ const handleLogout = async () => {
     const profileWithAge = {
       ...profile,
       eta: calculateAge(profile.dataNascita),
+      email: user?.email
     }
-    saveUserProfile(profileWithAge)
-    setProfile(profileWithAge)
-    alert('Profilo salvato!')
+    
+    try {
+      await saveUserProfileDB(user.id, profileWithAge)
+      saveUserProfile(profileWithAge)
+      setProfile(profileWithAge)
+      alert('Profilo salvato! ✅')
+      console.log('✅ Profilo salvato su Supabase')
+    } catch (err) {
+      console.error('Errore salvataggio profilo:', err)
+      saveUserProfile(profileWithAge)
+      setProfile(profileWithAge)
+      alert('Profilo salvato localmente (errore cloud)')
+    }
   }
 
-  const handleAddWeight = () => {
-    if (!newWeight) {
-      alert('Inserisci il peso!')
-      return
+  const handleAddWeight = async (weight, date) => {
+    try {
+      const cleanWeightData = {
+        weight: parseFloat(weight),
+        date: date
+      }
+      
+      const newLog = await saveWeightLogDB(user.id, cleanWeightData.weight, cleanWeightData.date)
+      
+      const savedLog = {
+        id: newLog.id || Date.now().toString(),
+        weight: cleanWeightData.weight,
+        date: cleanWeightData.date
+      }
+      
+      const updatedLog = [savedLog, ...weightLog]
+      setWeightLog(updatedLog)
+      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+      
+      console.log('✅ Pesata salvata su Supabase')
+    } catch (err) {
+      console.error('Errore salvataggio pesata:', err)
+      alert('Errore nel salvataggio della pesata')
     }
-    setWeightLog(addWeightEntry(newWeight))
-    setNewWeight('')
+  }
+
+  const handleDeleteWeight = async (entryId) => {
+    if (!confirm('Eliminare questa pesata?')) return
+    
+    try {
+      await deleteWeightLogDB(entryId)
+      const updatedLog = weightLog.filter(entry => entry.id !== entryId)
+      setWeightLog(updatedLog)
+      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+      console.log('✅ Pesata eliminata da Supabase')
+    } catch (err) {
+      console.error('Errore eliminazione pesata:', err)
+      alert('Errore nell\'eliminazione della pesata')
+    }
   }
 
   const handleSelectArea = (areaId) => {
@@ -92,25 +154,83 @@ const handleLogout = async () => {
     setShowMeasurementInput(true)
   }
 
-  const handleSaveMeasurement = (data) => {
-    const newMeasurement = {
-      [editingMeasurement.area]: data.value,
-      date: data.date,
+  const mapAreaToDb = (area) => {
+    const map = {
+      braccioDestro: 'braccio_destro',
+      braccioSinistro: 'braccio_sinistro',
+      torace: 'torace',
+      vita: 'vita',
+      glutei: 'glutei',
+      cosciaDestra: 'coscia_destra',
+      cosciaSinistra: 'coscia_sinistra',
+      polpaccioDestro: 'polpaccio_destro',
+      polpaccioSinistro: 'polpaccio_sinistro'
     }
-    setMeasurements(saveMeasurements(newMeasurement))
-    setShowMeasurementInput(false)
-    setEditingMeasurement(null)
+    return map[area] || area
+  }
+
+  const handleSaveMeasurement = async (data) => {
+    try {
+      const existing = measurements.find(m => m.date === data.date)
+      const dbArea = mapAreaToDb(editingMeasurement.area)
+
+      const updatedMeasurement = {
+        date: data.date,
+        braccio_destro: existing?.braccio_destro || null,
+        braccio_sinistro: existing?.braccio_sinistro || null,
+        torace: existing?.torace || null,
+        vita: existing?.vita || null,
+        glutei: existing?.glutei || null,
+        coscia_destra: existing?.coscia_destra || null,
+        coscia_sinistra: existing?.coscia_sinistra || null,
+        polpaccio_destro: existing?.polpaccio_destro || null,
+        polpaccio_sinistro: existing?.polpaccio_sinistro || null,
+        [dbArea]: parseFloat(data.value)
+      }
+
+      const saved = await saveMeasurementDB(user.id, updatedMeasurement)
+      
+      let newMeasurementsList
+      if (existing) {
+        newMeasurementsList = measurements.map(m => m.date === data.date ? { ...m, ...saved } : m)
+      } else {
+        newMeasurementsList = [saved, ...measurements]
+      }
+      setMeasurements(newMeasurementsList)
+      localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
+      
+      setShowMeasurementInput(false)
+      setEditingMeasurement(null)
+      console.log('✅ Misura salvata su Supabase')
+    } catch (err) {
+      console.error('Errore salvataggio misura:', err)
+      alert('Errore nel salvataggio della misura')
+    }
+  }
+
+  const handleDeleteMeasurement = async (mId) => {
+    if (!confirm('Eliminare questa misurazione?')) return
+    try {
+      await deleteMeasurementDB(mId)
+      const updated = measurements.filter(m => m.id !== mId)
+      setMeasurements(updated)
+      localStorage.setItem('fitness_app_measurements', JSON.stringify(updated))
+      console.log('✅ Misura eliminata da Supabase')
+    } catch (err) {
+      console.error('Errore eliminazione misura:', err)
+      alert('Errore nell\'eliminazione della misura')
+    }
   }
 
   const averageWeight = getAverageWeight()
 
   const tabs = [
-  { id: 'anagrafica', label: 'Anagrafica', icon: '' },
-  { id: 'peso', label: 'Peso', icon: '⚖️' },
-  { id: 'misure', label: 'Misure', icon: '📏' },
-  { id: 'backup', label: 'Backup', icon: '💾' },
-  { id: 'account', label: 'Account', icon: '👤' },
-]
+    { id: 'anagrafica', label: 'Anagrafica', icon: '' },
+    { id: 'peso', label: 'Peso', icon: '⚖️' },
+    { id: 'misure', label: 'Misure', icon: '📏' },
+    { id: 'backup', label: 'Backup', icon: '💾' },
+    { id: 'account', label: 'Account', icon: '👤' },
+  ]
 
   const areaLabels = {
     braccioDestro: 'Braccio Destro',
@@ -231,7 +351,13 @@ const handleLogout = async () => {
                 placeholder="78.5"
               />
               <button
-                onClick={handleAddWeight}
+                onClick={() => {
+                  if (!newWeight) {
+                    alert('Inserisci il peso!')
+                    return
+                  }
+                  handleAddWeight(newWeight, new Date().toISOString().split('T')[0])
+                }}
                 className="bg-electric text-black font-bold px-6 py-2 rounded-lg active:scale-95 transition-transform"
               >
                 +
@@ -252,11 +378,7 @@ const handleLogout = async () => {
                       <p className="text-xs text-gray-400">{new Date(entry.date).toLocaleDateString('it-IT')}</p>
                     </div>
                     <button
-                      onClick={() => {
-                        if (confirm('Eliminare questa pesata?')) {
-                          setWeightLog(deleteWeightEntry(entry.id))
-                        }
-                      }}
+                      onClick={() => handleDeleteWeight(entry.id)}
                       className="text-red-500 hover:text-red-400"
                     >
                       🗑
@@ -272,7 +394,6 @@ const handleLogout = async () => {
       {/* Tab Misure */}
       {activeTab === 'misure' && (
         <div className="space-y-4">
-          {/* Toggle Genere */}
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Sagoma</h3>
             <div className="flex gap-2 mb-4">
@@ -305,7 +426,6 @@ const handleLogout = async () => {
             </p>
           </div>
 
-          {/* Storico grafico per ogni area misurata */}
           {Object.keys(areaLabels).map((areaKey) => {
             const history = getAreaHistory(areaKey)
             if (history.length === 0) return null
@@ -320,7 +440,6 @@ const handleLogout = async () => {
             )
           })}
 
-          {/* Lista misurazioni complete */}
           {measurements.length > 0 && (
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-white mb-3">Storico completo</h3>
@@ -332,11 +451,7 @@ const handleLogout = async () => {
                         {new Date(m.date).toLocaleDateString('it-IT')}
                       </p>
                       <button
-                        onClick={() => {
-                          if (confirm('Eliminare questa misurazione?')) {
-                            setMeasurements(deleteMeasurements(m.id))
-                          }
-                        }}
+                        onClick={() => handleDeleteMeasurement(m.id)}
                         className="text-red-500 text-xs"
                       >
                         🗑
@@ -364,36 +479,36 @@ const handleLogout = async () => {
       {/* Tab Backup */}
       {activeTab === 'backup' && <DataBackup />}
 
-{/* Tab Account */}
-{activeTab === 'account' && (
-  <div className="space-y-4">
-    <div className="bg-card border border-border rounded-lg p-4">
-      <h3 className="text-lg font-semibold text-white mb-4">👤 Il tuo account</h3>
-      
-      <div className="bg-gray-800 rounded-lg p-4 mb-4">
-        <p className="text-sm text-gray-400 mb-1">Email</p>
-        <p className="text-electric font-semibold">{user?.email || 'Non disponibile'}</p>
-      </div>
+      {/* Tab Account */}
+      {activeTab === 'account' && (
+        <div className="space-y-4">
+          <div className="bg-card border border-border rounded-lg p-4">
+            <h3 className="text-lg font-semibold text-white mb-4">👤 Il tuo account</h3>
+            
+            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-sm text-gray-400 mb-1">Email</p>
+              <p className="text-electric font-semibold">{user?.email || 'Non disponibile'}</p>
+            </div>
 
-      <div className="bg-gray-800 rounded-lg p-4 mb-4">
-        <p className="text-sm text-gray-400 mb-1">Stato</p>
-        <p className="text-green-400 font-semibold">✓ Utente approvato</p>
-      </div>
+            <div className="bg-gray-800 rounded-lg p-4 mb-4">
+              <p className="text-sm text-gray-400 mb-1">Stato</p>
+              <p className="text-green-400 font-semibold">✓ Utente approvato</p>
+            </div>
 
-      <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
-        <p className="text-sm text-gray-400 mb-3">
-          ⚠️ Il logout ti riporterà alla schermata di accesso. Dovrai fare nuovamente il login con Google per entrare.
-        </p>
-        <button
-          onClick={handleLogout}
-          className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 active:scale-95 transition-all"
-        >
-          🚪 Esci dall'account
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+            <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
+              <p className="text-sm text-gray-400 mb-3">
+                ⚠️ Il logout ti riporterà alla schermata di accesso. Dovrai fare nuovamente il login con Google per entrare.
+              </p>
+              <button
+                onClick={handleLogout}
+                className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 active:scale-95 transition-all"
+              >
+                🚪 Esci dall'account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal inserimento misura */}
       {showMeasurementInput && editingMeasurement && (

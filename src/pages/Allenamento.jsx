@@ -3,7 +3,7 @@ import ExerciseManager from '../components/ExerciseManager'
 import RoutineBuilder from '../components/RoutineBuilder'
 import WorkoutLogger from '../components/WorkoutLogger'
 
-function Allenamento() {
+function Allenamento({ user }) {
   const [activeTab, setActiveTab] = useState('schede')
   const [loggingSession, setLoggingSession] = useState(null) // { routine, dayIndex }
 
@@ -40,12 +40,13 @@ function Allenamento() {
       {/* Contenuto Tab */}
       {activeTab === 'esercizi' && <ExerciseManager />}
       {activeTab === 'schede' && (
-        <RoutineBuilder onStartWorkout={handleStartWorkout} />
+        <RoutineBuilder user={user} onStartWorkout={handleStartWorkout} />
       )}
 
       {/* Modale Logger Allenamento */}
       {loggingSession && (
         <WorkoutLogger
+          user={user}
           routine={loggingSession.routine}
           dayIndex={loggingSession.dayIndex}
           onClose={() => setLoggingSession(null)}

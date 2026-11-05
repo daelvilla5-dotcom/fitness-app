@@ -29,6 +29,11 @@ import {
   getPresets,
   updatePreset,
 } from '../utils/userData'
+import { 
+  loadActiveDailyLog as loadActiveDailyLogDB,
+  saveDailyLog as saveDailyLogDB
+} from '../utils/supabaseData'
+
 
 function Alimentazione({ user }) {
   const [activeTab, setActiveTab] = useState('pasti')
@@ -63,29 +68,53 @@ useEffect(() => {
   if (user) {
     const loadFromSupabase = async () => {
       try {
+        // Carica alimenti
         const supabaseFoods = await loadFoodsDB(user.id)
         if (supabaseFoods.length > 0) {
-          // Se ci sono dati su Supabase, usa quelli
           setFoods(supabaseFoods)
-          console.log('✅ Alimenti caricati da Supabase:', supabaseFoods.length)
         } else {
-          // Altrimenti carica da localStorage (fallback)
           const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
-          if (localFoods.length > 0) {
-            setFoods(localFoods)
-            console.log('📦 Alimenti caricati da localStorage:', localFoods.length)
-          }
+          if (localFoods.length > 0) setFoods(localFoods)
         }
+
+        // Carica diario attivo
+        //const activeLog = await loadActiveDailyLogDB(user.id)
+        //if (activeLog) {
+          // Se c'è un giorno attivo su Supabase, usalo
+          //setActiveDay(activeLog) // Assicurati che il nome della variabile di stato corrisponda
+          //console.log('📅 Diario attivo caricato da Supabase')
+        //}
+        // Altrimenti, il codice esistente creerà un nuovo giorno da localStorage
+        
+        console.log('✅ Dati alimentazione caricati')
       } catch (err) {
         console.error('Errore caricamento da Supabase:', err)
-        // Fallback su localStorage
-        const localFoods = JSON.parse(localStorage.getItem('fitness_app_foods') || '[]')
-        setFoods(localFoods)
       }
     }
     loadFromSupabase()
   }
 }, [user])
+
+// Salva automaticamente il diario su Supabase quando cambia
+useEffect(() => {
+  if (user && activeDay && activeDay.entries && activeDay.entries.length > 0) {
+    const saveTimer = setTimeout(async () => {
+      try {
+        await saveDailyLogDB(user.id, {
+          start_date: activeDay.startDate || new Date().toISOString().split('T')[0],
+          end_date: activeDay.endDate || null,
+          is_active: activeDay.isActive !== false,
+          entries: activeDay.entries
+        })
+        console.log('💾 Diario salvato su Supabase')
+      } catch (err) {
+        console.error('Errore salvataggio diario:', err)
+      }
+    }, 1000) // Debounce di 1 secondo per non sovraccaricare
+
+    return () => clearTimeout(saveTimer)
+  }
+}, [user, activeDay])
 
   const loadData = () => {
     setFoods(getFoods())
@@ -202,19 +231,23 @@ useEffect(() => {
 
   const handleSaveFood = async (foodData) => {
   try {
-    // Salva su Supabase usando il nome rinominato
-    const savedFood = await saveFoodDB(user.id, foodData) // ← Usa saveFoodDB
+    // Salva su Supabase
+    const savedFood = await saveFoodDB(user.id, foodData)
     
     // Aggiorna lo stato locale
-    setFoods([...foods, savedFood])
+    const updatedFoods = [...foods, savedFood]
+    setFoods(updatedFoods)
     
     // Salva anche su localStorage (backup)
-    localStorage.setItem('fitness_app_foods', JSON.stringify([...foods, savedFood]))
+    localStorage.setItem('fitness_app_foods', JSON.stringify(updatedFoods))
+    
+    // ✅ CHIUDI IL MODAL
+    setShowAddFoodModal(false)
     
     console.log('✅ Alimento salvato su Supabase:', savedFood.name)
   } catch (err) {
     console.error('Errore salvataggio su Supabase:', err)
-    // Fallback...
+    alert('Errore nel salvataggio dell\'alimento')
   }
 }
 

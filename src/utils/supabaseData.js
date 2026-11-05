@@ -231,8 +231,12 @@ export async function loadUserProfile(userId) {
 
 export async function saveUserProfile(userId, profileData) {
   try {
-    // Controlla se esiste già
-    const existing = await loadUserProfile(userId)
+    // Controlla se esiste già (usando email invece di user_id)
+    const { data: existing } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('email', profileData.email)
+      .single()
 
     if (existing) {
       // Aggiorna
@@ -244,7 +248,7 @@ export async function saveUserProfile(userId, profileData) {
           altezza: profileData.altezza,
           eta: profileData.eta
         })
-        .eq('id', existing.id)
+        .eq('email', profileData.email)  // ← Usa email invece di user_id
         .select()
         .single()
 
@@ -255,7 +259,6 @@ export async function saveUserProfile(userId, profileData) {
       const { data, error } = await supabase
         .from('user_profiles')
         .insert({
-          user_id: userId,
           email: profileData.email,
           genere: profileData.genere,
           data_nascita: profileData.data_nascita,
@@ -280,14 +283,23 @@ export async function saveUserProfile(userId, profileData) {
 
 export async function loadTargets(userId) {
   try {
+    // Prima ottieni l'email dell'utente
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email
+    
+    if (!email) {
+      console.warn('Nessuna email trovata per loadTargets')
+      return null
+    }
+
     const { data, error } = await supabase
       .from('targets')
       .select('*')
-      .eq('user_id', userId)
+      .eq('email', email)  // ← Usa email invece di user_id
       .single()
 
-    if (error) throw error
-    return data
+    if (error && error.code !== 'PGRST116') throw error // PGRST116 = nessuna riga
+    return data || null
   } catch (err) {
     console.error('Errore caricamento obiettivi:', err)
     return null
@@ -296,9 +308,23 @@ export async function loadTargets(userId) {
 
 export async function saveTargets(userId, targetsData) {
   try {
-    const existing = await loadTargets(userId)
+    // Prima ottieni l'email dell'utente
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email
+    
+    if (!email) {
+      throw new Error('Nessuna email trovata per saveTargets')
+    }
+
+    // Controlla se esiste già
+    const { data: existing } = await supabase
+      .from('targets')
+      .select('*')
+      .eq('email', email)  // ← Usa email invece di user_id
+      .single()
 
     if (existing) {
+      // Aggiorna
       const { data, error } = await supabase
         .from('targets')
         .update({
@@ -310,17 +336,18 @@ export async function saveTargets(userId, targetsData) {
           attivita: targetsData.attivita,
           obiettivo: targetsData.obiettivo
         })
-        .eq('id', existing.id)
+        .eq('email', email)  // ← Usa email invece di user_id
         .select()
         .single()
 
       if (error) throw error
       return data
     } else {
+      // Crea nuovo
       const { data, error } = await supabase
         .from('targets')
         .insert({
-          user_id: userId,
+          email: email,  // ← Aggiungi email
           calories: targetsData.calories || 2000,
           pro: targetsData.pro || 150,
           carb: targetsData.carb || 250,
@@ -338,5 +365,227 @@ export async function saveTargets(userId, targetsData) {
   } catch (err) {
     console.error('Errore salvataggio obiettivi:', err)
     throw err
+  }
+}
+
+// ============================================
+// SCHEDE ALLENAMENTO (routines)
+// ============================================
+
+export async function loadRoutines(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('routines')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.error('Errore caricamento schede:', err)
+    return []
+  }
+}
+
+export async function saveRoutine(userId, routineData) {
+  try {
+    const { data, error } = await supabase
+      .from('routines')
+      .insert({
+        user_id: userId,
+        name: routineData.name,
+        days: routineData.days || []
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore salvataggio scheda:', err)
+    throw err
+  }
+}
+
+export async function updateRoutine(routineId, routineData) {
+  try {
+    const { data, error } = await supabase
+      .from('routines')
+      .update({
+        name: routineData.name,
+        days: routineData.days
+      })
+      .eq('id', routineId)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore aggiornamento scheda:', err)
+    throw err
+  }
+}
+
+export async function deleteRoutine(routineId) {
+  try {
+    const { error } = await supabase
+      .from('routines')
+      .delete()
+      .eq('id', routineId)
+
+    if (error) throw error
+    return true
+  } catch (err) {
+    console.error('Errore eliminazione scheda:', err)
+    throw err
+  }
+}
+
+// ============================================
+// ALLENAMENTI SVOLTI (workout_logs)
+// ============================================
+
+export async function loadWorkoutLogs(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.error('Errore caricamento workout logs:', err)
+    return []
+  }
+}
+
+export async function saveWorkoutLog(userId, logData) {
+  try {
+    const { data, error } = await supabase
+      .from('workout_logs')
+      .insert({
+        user_id: userId,
+        routine_name: logData.routine_name,
+        day_name: logData.day_name,
+        exercises: logData.exercises || [],
+        date: logData.date
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore salvataggio workout log:', err)
+    throw err
+  }
+}
+
+export async function deleteWorkoutLog(logId) {
+  try {
+    const { error } = await supabase
+      .from('workout_logs')
+      .delete()
+      .eq('id', logId)
+
+    if (error) throw error
+    return true
+  } catch (err) {
+    console.error('Errore eliminazione workout log:', err)
+    throw err
+  }
+}
+
+// ============================================
+// DIARIO ALIMENTARE GIORNALIERO (daily_logs)
+// ============================================
+
+// Carica il giorno attivo (o l'ultimo giorno registrato)
+export async function loadActiveDailyLog(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .single()
+
+    if (error && error.code !== 'PGRST116') throw error // PGRST116 = nessuna riga trovata
+    return data || null
+  } catch (err) {
+    console.error('Errore caricamento diario attivo:', err)
+    return null
+  }
+}
+
+// Salva o aggiorna il giorno corrente (Upsert)
+export async function saveDailyLog(userId, logData) {
+  try {
+    // Controlla se esiste già un log per questa data
+    const { data: existing } = await supabase
+      .from('daily_logs')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('start_date', logData.start_date)
+      .single()
+
+    if (existing) {
+      // Aggiorna
+      const { data, error } = await supabase
+        .from('daily_logs')
+        .update({
+          entries: logData.entries,
+          is_active: logData.is_active,
+          end_date: logData.end_date
+        })
+        .eq('id', existing.id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    } else {
+      // Inserisci nuovo
+      const { data, error } = await supabase
+        .from('daily_logs')
+        .insert({
+          user_id: userId,
+          start_date: logData.start_date,
+          end_date: logData.end_date,
+          is_active: logData.is_active,
+          entries: logData.entries
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    }
+  } catch (err) {
+    console.error('Errore salvataggio diario:', err)
+    throw err
+  }
+}
+
+// Carica lo storico dei giorni passati
+export async function loadDailyLogsHistory(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', false)
+      .order('start_date', { ascending: false })
+      .limit(30) // Ultimi 30 giorni
+
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.error('Errore caricamento storico diario:', err)
+    return []
   }
 }

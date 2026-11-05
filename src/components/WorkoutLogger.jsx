@@ -1,29 +1,41 @@
-import { useState } from 'react'
-import { saveWorkoutLog, getWorkoutLogs } from '../utils/workoutDatabase'
+import { useState, useEffect } from 'react'
+import { 
+  loadWorkoutLogs as loadWorkoutLogsDB,
+  saveWorkoutLog as saveWorkoutLogDB
+} from '../utils/supabaseData'
+import { getWorkoutLogs as getLocalWorkoutLogs } from '../utils/workoutDatabase'
 
-function WorkoutLogger({ routine, dayIndex, onClose }) {
+function WorkoutLogger({ user, routine, dayIndex, onClose }) {
   const day = routine.days[dayIndex]
-  const allLogs = getWorkoutLogs()
+  const [allLogs, setAllLogs] = useState([])
 
-  // Trova l'ultimo allenamento con gli stessi esercizi
+  useEffect(() => {
+    if (user) {
+      loadWorkoutLogsDB(user.id).then(logs => {
+        setAllLogs(logs.length > 0 ? logs : getLocalWorkoutLogs())
+      }).catch(err => {
+        console.error('Errore caricamento logs:', err)
+        setAllLogs(getLocalWorkoutLogs())
+      })
+    }
+  }, [user, routine.name, day.name])
+
   const findLastSession = () => {
     const matchingLogs = allLogs.filter(log => 
-      log.routineName === routine.name && log.dayName === day.name
+      log.routine_name === routine.name && log.day_name === day.name
     )
     
     if (matchingLogs.length === 0) return null
     
-    const lastLog = matchingLogs.sort((a, b) => b.id - a.id)[0]
+    const lastLog = matchingLogs.sort((a, b) => new Date(b.date) - new Date(a.date))[0]
     return lastLog
   }
 
   const lastSession = findLastSession()
 
-  // Stato per i dati inseriti - CAMPI VUOTI
   const [logData, setLogData] = useState(() => {
     const initial = {}
     day.exercises.forEach((ex, idx) => {
-      // Inizializza con righe vuote
       initial[idx] = Array.from({ length: ex.targetSets }, () => ({ weight: '', reps: '' }))
     })
     return initial
@@ -47,18 +59,26 @@ function WorkoutLogger({ routine, dayIndex, onClose }) {
     setLogData(newLogData)
   }
 
-  const finishWorkout = () => {
-    const log = {
-      routineName: routine.name,
-      dayName: day.name,
+  const finishWorkout = async () => {
+    if (!user) return
+    const logPayload = {
+      routine_name: routine.name,
+      day_name: day.name,
       exercises: day.exercises.map((ex, idx) => ({
         name: ex.name,
         sets: logData[idx]
-      }))
+      })),
+      date: new Date().toISOString().split('T')[0]
     }
-    saveWorkoutLog(log)
-    alert('Allenamento salvato nello storico! 💪')
-    onClose()
+    
+    try {
+      await saveWorkoutLogDB(user.id, logPayload)
+      alert('Allenamento salvato nello storico! 💪')
+      onClose()
+    } catch (err) {
+      console.error('Errore salvataggio allenamento:', err)
+      alert('Errore nel salvataggio dell\'allenamento')
+    }
   }
 
   return (
@@ -73,7 +93,6 @@ function WorkoutLogger({ routine, dayIndex, onClose }) {
 
       <div className="p-4 space-y-6">
         {day.exercises.map((ex, exIndex) => {
-          // Trova dati ultima sessione per questo esercizio
           const lastExData = lastSession?.exercises?.find(e => e.name === ex.name)
           
           return (
@@ -83,7 +102,6 @@ function WorkoutLogger({ routine, dayIndex, onClose }) {
                 <p className="text-xs text-gray-400">Target: {ex.targetSets}x{ex.targetReps}</p>
               </div>
 
-              {/* Info ultimo allenamento */}
               {lastExData && lastExData.sets && lastExData.sets.length > 0 && (
                 <div className="bg-electric/10 border border-electric/30 rounded-lg p-2 mb-3">
                   <p className="text-xs text-electric font-semibold mb-1">📊 Ultimo allenamento:</p>
@@ -97,7 +115,6 @@ function WorkoutLogger({ routine, dayIndex, onClose }) {
                 </div>
               )}
 
-              {/* Serie attuali - CAMPI VUOTI */}
               <div className="space-y-2">
                 {logData[exIndex].map((set, setIndex) => (
                   <div key={setIndex} className="flex items-center gap-2 bg-gray-800 rounded-lg p-2">
@@ -134,7 +151,6 @@ function WorkoutLogger({ routine, dayIndex, onClose }) {
                 ))}
               </div>
 
-              {/* Pulsanti serie */}
               <div className="flex gap-2 mt-3">
                 <button
                   onClick={() => addSet(exIndex)}
