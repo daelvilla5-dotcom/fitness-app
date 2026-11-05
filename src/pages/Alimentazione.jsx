@@ -68,31 +68,32 @@ function Alimentazione({ user }) {
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
 
-  // UNICO useEffect di inizializzazione che priorizza Supabase
-  useEffect(() => {
-    if (!user) return
+  // Sostituisci l'intero useEffect di inizializzazione con questo:
+useEffect(() => {
+  if (!user) return
 
-    const initApp = async () => {
-      try {
-        // 1. Carica Profilo da Supabase
-        const dbProfile = await loadUserProfileDB(user.id)
-        if (dbProfile) {
-          const p = { 
-            genere: dbProfile.genere || 'M', 
-            eta: dbProfile.eta, 
-            altezza: dbProfile.altezza,
-            dataNascita: dbProfile.data_nascita
-          }
-          setProfile(p)
-          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
-        } else {
-          setProfile(getUserProfile())
+  const initApp = async () => {
+    try {
+      // 1. Carica Profilo da Supabase
+      const dbProfile = await loadUserProfileDB(user.id)
+      if (dbProfile) {
+        const p = { 
+          genere: dbProfile.genere || 'M', 
+          eta: dbProfile.eta, 
+          altezza: dbProfile.altezza,
+          dataNascita: dbProfile.data_nascita
         }
+        setProfile(p)
+        localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
+      } else {
+        setProfile(getUserProfile())
+      }
 
-        // 2. Carica Peso Medio
-        setAverageWeight(getAverageWeight())
+      // 2. Carica Peso Medio
+      setAverageWeight(getAverageWeight())
 
-        // 3. Carica Giorno Attivo da Supabase
+      // 3. Carica Giorno Attivo da Supabase SOLO se siamo nella tab pasti
+      if (activeTab === 'pasti') {
         const dbLog = await loadActiveDailyLogDB(user.id)
         if (dbLog && dbLog.is_active) {
           const syncedDay = {
@@ -106,7 +107,6 @@ function Alimentazione({ user }) {
           setDailyLog(syncedDay.entries)
           setDailyTotals(calculateTotals(syncedDay.entries))
         } else {
-          // Fallback al locale se non c'è nulla su Supabase
           const localDay = getActiveDay()
           if (localDay && localDay.isActive) {
             setActiveDay(localDay)
@@ -115,39 +115,39 @@ function Alimentazione({ user }) {
             setDailyTotals(calculateTotals(localLog))
           }
         }
+      }
 
-        // 4. Carica Obiettivi da Supabase
-        const dbTargets = await loadTargetsDB(user.id)
-        if (dbTargets) {
-          setTargets(dbTargets)
-          localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
-        } else {
-          setTargets(getTargets())
-        }
-
-        // 5. Carica Alimenti da Supabase
-        const supabaseFoods = await loadFoodsDB(user.id)
-        if (supabaseFoods.length > 0) {
-          setFoods(supabaseFoods)
-        } else {
-          setFoods(getFoods())
-        }
-
-      } catch (err) {
-        console.error('Errore caricamento iniziale da Supabase:', err)
-        // Fallback totale al locale in caso di errore
-        setProfile(getUserProfile())
-        setAverageWeight(getAverageWeight())
-        setActiveDay(getActiveDay())
-        setDailyLog(getTodayLog())
-        setDailyTotals(calculateTotals(getTodayLog()))
+      // 4. Carica Obiettivi da Supabase
+      const dbTargets = await loadTargetsDB(user.id)
+      if (dbTargets) {
+        setTargets(dbTargets)
+        localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
+      } else {
         setTargets(getTargets())
+      }
+
+      // 5. Carica Alimenti da Supabase
+      const supabaseFoods = await loadFoodsDB(user.id)
+      if (supabaseFoods.length > 0) {
+        setFoods(supabaseFoods)
+      } else {
         setFoods(getFoods())
       }
-    }
 
-    initApp()
-  }, [user])
+    } catch (err) {
+      console.error('Errore caricamento iniziale da Supabase:', err)
+      setProfile(getUserProfile())
+      setAverageWeight(getAverageWeight())
+      setActiveDay(getActiveDay())
+      setDailyLog(getTodayLog())
+      setDailyTotals(calculateTotals(getTodayLog()))
+      setTargets(getTargets())
+      setFoods(getFoods())
+    }
+  }
+
+  initApp()
+}, [user, activeTab]) // ← AGGIUNTO activeTab nelle dipendenze
 
   // Salva automaticamente il diario su Supabase quando cambia (Debounce)
   useEffect(() => {

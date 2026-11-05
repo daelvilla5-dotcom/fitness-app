@@ -114,85 +114,66 @@ useEffect(() => {
     }
   }
 
-  const handleAddWeight = async (weight, date) => {
-    const cleanWeightData = {
-      weight: parseFloat(weight),
-      date: date
-    }
-    
-    // Se offline, aggiungi alla coda e aggiorna UI localmente
-    if (!navigator.onLine) {
-      addToQueue({
-        type: 'CREATE_WEIGHT',
-        data: cleanWeightData
-      })
-      
-      // Aggiorna UI localmente
-      const savedLog = {
-        id: `pending_${Date.now()}`,
-        weight: cleanWeightData.weight,
-        date: cleanWeightData.date
-      }
-      const updatedLog = [savedLog, ...weightLog]
-      setWeightLog(updatedLog)
-      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      
-      alert('⚠️ Offline: pesata salvata in locale e verrà sincronizzata quando torni online')
-      return
-    }
-    
-    // Se online, procedi normalmente
-    try {
-      const newLog = await saveWeightLogDB(user.id, cleanWeightData.weight, cleanWeightData.date)
-      
-      const savedLog = {
-        id: newLog.id || Date.now().toString(),
-        weight: cleanWeightData.weight,
-        date: cleanWeightData.date
-      }
-      
-      const updatedLog = [savedLog, ...weightLog]
-      setWeightLog(updatedLog)
-      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      
-      console.log('✅ Pesata salvata su Supabase')
-    } catch (err) {
-      console.error('Errore salvataggio pesata:', err)
-      alert('Errore nel salvataggio della pesata')
-    }
-  }
-
   const handleDeleteWeight = async (entryId) => {
-    if (!confirm('Eliminare questa pesata?')) return
-    
-    // Se offline, aggiungi alla coda
-    if (!navigator.onLine) {
-      addToQueue({
-        type: 'DELETE_WEIGHT',
-        data: { id: entryId }
-      })
-      
-      // Aggiorna UI localmente
-      const updatedLog = weightLog.filter(entry => entry.id !== entryId)
-      setWeightLog(updatedLog)
-      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      
-      alert('⚠️ Offline: eliminazione salvata in locale e verrà sincronizzata quando torni online')
-      return
-    }
-    
-    // Se online, procedi normalmente
-    try {
-      await deleteWeightLogDB(entryId)
-      const updatedLog = weightLog.filter(entry => entry.id !== entryId)
-      setWeightLog(updatedLog)
-      localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      console.log('✅ Pesata eliminata da Supabase')
-    } catch (err) {
-      console.error('Errore eliminazione pesata:', err)
-      alert('Errore nell\'eliminazione della pesata')
-    }
+  if (!confirm('Eliminare questa pesata?')) return
+  
+  try {
+    // Prova a eliminare da Supabase
+    await deleteWeightLogDB(entryId)
+  } catch (err) {
+    console.log('Pesata non trovata su Supabase, elimino solo da locale')
   }
+  
+  // Elimina da locale comunque
+  const updatedLog = weightLog.filter(entry => entry.id !== entryId)
+  setWeightLog(updatedLog)
+  localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+}
+
+const handleAddWeight = async (weight, date) => {
+  const cleanWeightData = {
+    weight: parseFloat(weight),
+    date: date
+  }
+  
+  // Se offline, aggiungi alla coda
+  if (!navigator.onLine) {
+    const { addToQueue } = await import('../utils/offlineQueue')
+    addToQueue({
+      type: 'CREATE_WEIGHT',
+      data: cleanWeightData
+    })
+    
+    const savedLog = {
+      id: `pending_${Date.now()}`,
+      weight: cleanWeightData.weight,
+      date: cleanWeightData.date
+    }
+    const updatedLog = [savedLog, ...weightLog]
+    setWeightLog(updatedLog)
+    localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+    alert('⚠️ Offline: pesata salvata in locale')
+    return
+  }
+  
+  // Online: salva su Supabase
+  try {
+    const newLog = await saveWeightLogDB(user.id, cleanWeightData.weight, cleanWeightData.date)
+    
+    const savedLog = {
+      id: newLog.id || Date.now().toString(),
+      weight: cleanWeightData.weight,
+      date: cleanWeightData.date
+    }
+    
+    const updatedLog = [savedLog, ...weightLog]
+    setWeightLog(updatedLog)
+    localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+  } catch (err) {
+    console.error('Errore salvataggio pesata:', err)
+    alert('Errore nel salvataggio')
+  }
+}
 
   const handleSelectArea = (areaId) => {
     setSelectedArea(areaId)
