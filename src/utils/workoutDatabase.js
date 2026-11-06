@@ -27,6 +27,16 @@ export function saveExercise(exercise) {
   return exercises
 }
 
+export function updateExercise(updatedExercise) {
+  const exercises = getExercises()
+  const index = exercises.findIndex(ex => ex.id === updatedExercise.id)
+  if (index !== -1) {
+    exercises[index] = updatedExercise
+    localStorage.setItem('fitness_app_exercises', JSON.stringify(exercises))
+  }
+  return exercises
+}
+
 export function deleteExercise(id) {
   const exercises = getExercises().filter(e => e.id !== id)
   localStorage.setItem(EXERCISES_KEY, JSON.stringify(exercises))

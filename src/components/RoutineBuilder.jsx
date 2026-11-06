@@ -16,7 +16,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
   const [editingDayId, setEditingDayId] = useState(null)
   const [editingDayName, setEditingDayName] = useState('')
   
-  // Stati per la condivisione
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [shareLink, setShareLink] = useState('')
   const [sharingRoutine, setSharingRoutine] = useState(null)
@@ -127,14 +126,16 @@ function RoutineBuilder({ user, onStartWorkout }) {
       exerciseId: exercise.id,
       name: exercise.name,
       targetSets: 3,
-      targetReps: 12
+      targetReps: '8-12', // Default range
+      restTime: '1\'30"'  // Default riposo
     })
     updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   const updateExerciseTarget = (dayIndex, exIndex, field, value) => {
     const newDays = [...activeRoutine.days]
-    newDays[dayIndex].exercises[exIndex][field] = Number(value)
+    // Non usiamo Number() perché targetReps e restTime sono stringhe
+    newDays[dayIndex].exercises[exIndex][field] = value
     updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
@@ -163,20 +164,8 @@ function RoutineBuilder({ user, onStartWorkout }) {
                       {r.name} <span className="text-xs text-gray-400">({r.days.length} giorni)</span>
                     </button>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleShareRoutine(r)}
-                        className="text-blue-400 hover:text-blue-300 text-sm"
-                        title="Condividi scheda"
-                      >
-                        🔗
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRoutine(r.id)}
-                        className="text-red-500 hover:text-red-400"
-                        title="Elimina scheda"
-                      >
-                        🗑
-                      </button>
+                      <button onClick={() => handleShareRoutine(r)} className="text-blue-400 hover:text-blue-300 text-sm" title="Condividi">🔗</button>
+                      <button onClick={() => handleDeleteRoutine(r.id)} className="text-red-500 hover:text-red-400" title="Elimina">🗑</button>
                     </div>
                   </div>
                 ))}
@@ -194,21 +183,14 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 className="flex-1 bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric"
                 placeholder="Nome scheda (es. Push Pull Legs)"
               />
-              <button
-                onClick={createRoutine}
-                className="bg-electric text-black font-bold px-4 py-2 rounded-lg"
-              >
-                Crea
-              </button>
+              <button onClick={createRoutine} className="bg-electric text-black font-bold px-4 py-2 rounded-lg">Crea</button>
             </div>
           </div>
         </>
       ) : (
         <>
           <div className="flex justify-between items-center mb-2">
-            <button onClick={() => setActiveRoutine(null)} className="text-electric text-sm font-semibold">
-              ← Torna alle schede
-            </button>
+            <button onClick={() => setActiveRoutine(null)} className="text-electric text-sm font-semibold">← Torna alle schede</button>
             <h3 className="text-lg font-bold text-white">{activeRoutine.name}</h3>
           </div>
 
@@ -229,11 +211,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
                     <button onClick={() => setEditingDayId(null)} className="text-gray-400 text-xs">✕</button>
                   </div>
                 ) : (
-                  <h4
-                    className="text-electric font-bold cursor-pointer hover:underline flex-1"
-                    onClick={() => startEditDayName(day)}
-                    title="Clicca per rinominare"
-                  >
+                  <h4 className="text-electric font-bold cursor-pointer hover:underline flex-1" onClick={() => startEditDayName(day)} title="Clicca per rinominare">
                     {day.name} ✎
                   </h4>
                 )}
@@ -244,21 +222,44 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 </div>
               </div>
 
-              <div className="space-y-2 mb-3">
+              <div className="space-y-3 mb-3">
                 {day.exercises.map((ex, exIndex) => (
                   <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-white font-semibold">{ex.name}</span>
                       <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
                     </div>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
+                    {/* NUOVA GRIGLIA PER SERIE, REPS E RIPOSO */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
                         <label className="text-xs text-gray-400">Serie</label>
-                        <input type="number" value={ex.targetSets} onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" />
+                        <input 
+                          type="number" 
+                          value={ex.targetSets || 3} 
+                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} 
+                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                          placeholder="3"
+                        />
                       </div>
-                      <div className="flex-1">
-                        <label className="text-xs text-gray-400">Reps</label>
-                        <input type="number" value={ex.targetReps} onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" />
+                      <div>
+                        <label className="text-xs text-gray-400">Reps (es. 5-9)</label>
+                        <input 
+                          type="text" 
+                          value={ex.targetReps || '8-12'} 
+                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} 
+                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                          placeholder="8-12"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-400">Riposo</label>
+                        <input 
+                          type="text" 
+                          value={ex.restTime || '1\'30"'} 
+                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'restTime', e.target.value)} 
+                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                          placeholder="1'30&quot;"
+                        />
                       </div>
                     </div>
                   </div>
@@ -283,9 +284,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
             </div>
           ))}
 
-          <button onClick={addDay} className="w-full bg-gray-800 border border-dashed border-border text-electric font-semibold py-3 rounded-lg">
-            + Aggiungi Giorno
-          </button>
+          <button onClick={addDay} className="w-full bg-gray-800 border border-dashed border-border text-electric font-semibold py-3 rounded-lg">+ Aggiungi Giorno</button>
         </>
       )}
 
@@ -294,28 +293,11 @@ function RoutineBuilder({ user, onStartWorkout }) {
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-white mb-4">Condividi "{sharingRoutine.name}"</h3>
-            <p className="text-sm text-gray-400 mb-3">
-              Chiunque abbia questo link può importare questa scheda nel proprio account.
-            </p>
-            <div className="bg-gray-800 p-3 rounded-lg border border-border mb-4 break-all text-electric text-sm">
-              {shareLink}
-            </div>
+            <p className="text-sm text-gray-400 mb-3">Chiunque abbia questo link può importare questa scheda.</p>
+            <div className="bg-gray-800 p-3 rounded-lg border border-border mb-4 break-all text-electric text-sm">{shareLink}</div>
             <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(shareLink)
-                  alert('Link copiato negli appunti! 📋')
-                }}
-                className="flex-1 bg-electric text-black font-bold py-2 rounded-lg"
-              >
-                Copia Link
-              </button>
-              <button
-                onClick={() => setShareModalOpen(false)}
-                className="flex-1 bg-gray-700 text-white font-bold py-2 rounded-lg"
-              >
-                Chiudi
-              </button>
+              <button onClick={() => { navigator.clipboard.writeText(shareLink); alert('Link copiato! 📋') }} className="flex-1 bg-electric text-black font-bold py-2 rounded-lg">Copia Link</button>
+              <button onClick={() => setShareModalOpen(false)} className="flex-1 bg-gray-700 text-white font-bold py-2 rounded-lg">Chiudi</button>
             </div>
           </div>
         </div>
