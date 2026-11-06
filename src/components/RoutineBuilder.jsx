@@ -4,9 +4,9 @@ import {
   saveRoutine as saveRoutineDB,
   updateRoutine as updateRoutineDB,
   deleteRoutine as deleteRoutineDB,
-  getOrCreateShareCode
+  getOrCreateShareCode,
+  loadExercises
 } from '../utils/supabaseData'
-import { getExercises } from '../utils/workoutDatabase'
 
 function RoutineBuilder({ user, onStartWorkout }) {
   const [routines, setRoutines] = useState([])
@@ -21,8 +21,19 @@ function RoutineBuilder({ user, onStartWorkout }) {
   const [sharingRoutine, setSharingRoutine] = useState(null)
 
   useEffect(() => {
-    setExercises(getExercises())
+    // Carica gli esercizi DA SUPABASE (non più da localStorage!)
     if (user) {
+      loadExercises(user.id).then(dbExercises => {
+        console.log('📋 Esercizi caricati da Supabase:', dbExercises.length)
+        if (dbExercises.length > 0) {
+          setExercises(dbExercises)
+        } else {
+          // Fallback: esercizi locali se Supabase è vuoto
+          const local = JSON.parse(localStorage.getItem('fitness_app_exercises') || '[]')
+          setExercises(local)
+        }
+      }).catch(err => console.error('Errore caricamento esercizi:', err))
+
       loadRoutinesDB(user.id).then(dbRoutines => {
         setRoutines(dbRoutines)
       }).catch(err => console.error('Errore caricamento schede:', err))
@@ -120,39 +131,58 @@ function RoutineBuilder({ user, onStartWorkout }) {
   }
 
   const addExerciseToDay = (dayIndex, exercise) => {
-  if (!activeRoutine) return
-  
-  const newDays = [...activeRoutine.days]
-  
-  // Verifica se l'esercizio è già presente per evitare duplicati
-  const alreadyExists = newDays[dayIndex].exercises.some(ex => ex.exerciseId === exercise.id)
-  
-  if (!alreadyExists) {
-    // Aggiungi il NUOVO esercizio alla lista esistente (non sostituirla!)
-    newDays[dayIndex].exercises.push({
-      exerciseId: exercise.id,
-      name: exercise.name,
-      targetSets: 3,
-      targetReps: '8-12',
-      restTime: '1\'30"'
-    })
+    if (!activeRoutine || !exercise) return
     
+    console.log('➕ Aggiunta esercizio:', exercise.name, 'al giorno', dayIndex)
+    
+    const newDays = [...activeRoutine.days]
+    const currentDay = { ...newDays[dayIndex] }
+    
+    // Verifica se l'esercizio è già presente
+    const alreadyExists = currentDay.exercises.some(ex => ex.exerciseId === exercise.id)
+    
+    if (alreadyExists) {
+      alert('Esercizio già presente in questo giorno!')
+      return
+    }
+    
+    // AGGIUNGI (non sostituire!) l'esercizio alla lista esistente
+    currentDay.exercises = [
+      ...currentDay.exercises,
+      {
+        exerciseId: exercise.id,
+        name: exercise.name,
+        targetSets: 3,
+        targetReps: '8-12',
+        restTime: '1\'30"'
+      }
+    ]
+    
+    newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
-  } else {
-    alert('Esercizio già presente nel giorno!')
   }
-}
 
   const updateExerciseTarget = (dayIndex, exIndex, field, value) => {
     const newDays = [...activeRoutine.days]
-    // Non usiamo Number() perché targetReps e restTime sono stringhe
-    newDays[dayIndex].exercises[exIndex][field] = value
+    const currentDay = { ...newDays[dayIndex] }
+    const currentExercises = [...currentDay.exercises]
+    
+    // Aggiorna solo il campo specifico dell'esercizio specifico
+    currentExercises[exIndex] = {
+      ...currentExercises[exIndex],
+      [field]: value
+    }
+    
+    currentDay.exercises = currentExercises
+    newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
   const removeExerciseFromDay = (dayIndex, exIndex) => {
     const newDays = [...activeRoutine.days]
-    newDays[dayIndex].exercises.splice(exIndex, 1)
+    const currentDay = { ...newDays[dayIndex] }
+    currentDay.exercises = currentDay.exercises.filter((_, idx) => idx !== exIndex)
+    newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
@@ -233,6 +263,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 </div>
               </div>
 
+              {/* Lista esercizi del giorno */}
               <div className="space-y-3 mb-3">
                 {day.exercises.map((ex, exIndex) => (
                   <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
@@ -240,7 +271,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
                       <span className="text-white font-semibold">{ex.name}</span>
                       <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
                     </div>
-                    {/* NUOVA GRIGLIA PER SERIE, REPS E RIPOSO */}
+                    {/* Campi Serie, Reps, Riposo */}
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-xs text-gray-400">Serie</label>
@@ -277,13 +308,17 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 ))}
               </div>
 
+              {/* Menu a tendina per aggiungere esercizi */}
               <select
                 onChange={(e) => {
-                  const ex = exercises.find(ex => ex.id === Number(e.target.value))
-                  if (ex) {
-                    addExerciseToDay(dayIndex, ex)
-                    e.target.value = ''
+                  const exId = Number(e.target.value)
+                  if (exId) {
+                    const ex = exercises.find(ex => ex.id === exId)
+                    if (ex) {
+                      addExerciseToDay(dayIndex, ex)
+                    }
                   }
+                  e.target.value = '' // Resetta la select dopo l'aggiunta
                 }}
                 className="w-full bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
               >
