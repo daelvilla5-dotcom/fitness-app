@@ -4,7 +4,26 @@ import {
   loadTargets as loadTargetsDB
 } from '../utils/supabaseData'
 
+// ✅ FUNZIONE DEFINITA PRIMA DI ESSERE USATA
+const calculateTotals = (entries) => {
+  if (!entries || entries.length === 0) {
+    return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
+  }
+
+  return entries.reduce((acc, entry) => {
+    const multiplier = entry.grams / 100
+    return {
+      calories: acc.calories + (entry.calories * multiplier),
+      pro: acc.pro + (entry.pro * multiplier),
+      carb: acc.carb + (entry.carb * multiplier),
+      gra: acc.gra + (entry.gra * multiplier),
+      fib: acc.fib + (entry.fib * multiplier),
+    }
+  }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+}
+
 function Panoramica({ user }) {
+  // ✅ ORA calculateTotals è disponibile
   const [targets, setTargets] = useState(() => {
     const saved = localStorage.getItem('fitness_app_targets')
     return saved ? JSON.parse(saved) : { calories: 2000, pro: 150, carb: 250, gra: 70, fib: 30 }
@@ -13,28 +32,10 @@ function Panoramica({ user }) {
   const [dailyTotals, setDailyTotals] = useState(() => {
     const savedLog = localStorage.getItem('fitness_app_daily_log')
     if (savedLog) {
-      const log = JSON.parse(savedLog)
-      return calculateTotals(log)
+      return calculateTotals(JSON.parse(savedLog))
     }
     return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
   })
-
-  const calculateTotals = (entries) => {
-    if (!entries || entries.length === 0) {
-      return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
-    }
-
-    return entries.reduce((acc, entry) => {
-      const multiplier = entry.grams / 100
-      return {
-        calories: acc.calories + (entry.calories * multiplier),
-        pro: acc.pro + (entry.pro * multiplier),
-        carb: acc.carb + (entry.carb * multiplier),
-        gra: acc.gra + (entry.gra * multiplier),
-        fib: acc.fib + (entry.fib * multiplier),
-      }
-    }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-  }
 
   useEffect(() => {
     if (!user) return
