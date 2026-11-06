@@ -247,19 +247,56 @@ useEffect(() => {
   }
 
   const handleAddToDailyLog = (food, grams) => {
-    if (!activeDay || !activeDay.isActive) { alert('Inizia un nuovo giorno prima di aggiungere alimenti!'); return }
-    setDailyLog(addToDailyLog(food, grams))
+  if (!activeDay || !activeDay.isActive) { 
+    alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
+    return 
   }
+  
+  const newEntry = {
+    id: Date.now(),
+    name: food.name,
+    calories: food.calories || 0,
+    pro: food.pro || 0,
+    carb: food.carb || 0,
+    gra: food.gra || 0,
+    fib: food.fib || 0,
+    grams: grams
+  }
+  
+  const newLog = [...dailyLog, newEntry]
+  setDailyLog(newLog)
+  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
+}
 
   const handleRemoveFromDailyLog = (entryId) => {
-    setDailyLog(removeFromDailyLog(entryId))
-  }
+  console.log('🗑 Rimozione entry:', entryId)
+  console.log('📋 Log prima:', dailyLog)
+  
+  const newLog = dailyLog.filter(entry => entry.id !== entryId)
+  
+  console.log('📋 Log dopo:', newLog)
+  console.log('🔢 Entries rimaste:', newLog.length)
+  
+  setDailyLog(newLog)
+  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
+}
 
   const handleUpdateGrams = (entryId, newGrams) => {
-    if (newGrams <= 0) { alert('Inserisci una quantità valida!'); return }
-    setDailyLog(updateFoodGrams(entryId, newGrams))
-    setEditingGrams(null)
+  if (newGrams <= 0) {
+    alert('Inserisci una quantità valida!')
+    return
   }
+  
+  console.log('✏️ Aggiornamento grammi:', entryId, '→', newGrams)
+  
+  const newLog = dailyLog.map(entry => 
+    entry.id === entryId ? { ...entry, grams: newGrams } : entry
+  )
+  
+  setDailyLog(newLog)
+  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
+  setEditingGrams(null)
+}
 
   const formatDate = (dateStr) => new Date(dateStr).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const round1 = (val) => Math.round(val * 10) / 10
