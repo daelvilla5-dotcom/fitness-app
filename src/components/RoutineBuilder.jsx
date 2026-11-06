@@ -120,17 +120,28 @@ function RoutineBuilder({ user, onStartWorkout }) {
   }
 
   const addExerciseToDay = (dayIndex, exercise) => {
-    if (!activeRoutine) return
-    const newDays = [...activeRoutine.days]
+  if (!activeRoutine) return
+  
+  const newDays = [...activeRoutine.days]
+  
+  // Verifica se l'esercizio è già presente per evitare duplicati
+  const alreadyExists = newDays[dayIndex].exercises.some(ex => ex.exerciseId === exercise.id)
+  
+  if (!alreadyExists) {
+    // Aggiungi il NUOVO esercizio alla lista esistente (non sostituirla!)
     newDays[dayIndex].exercises.push({
       exerciseId: exercise.id,
       name: exercise.name,
       targetSets: 3,
-      targetReps: '8-12', // Default range
-      restTime: '1\'30"'  // Default riposo
+      targetReps: '8-12',
+      restTime: '1\'30"'
     })
+    
     updateActiveRoutine({ ...activeRoutine, days: newDays })
+  } else {
+    alert('Esercizio già presente nel giorno!')
   }
+}
 
   const updateExerciseTarget = (dayIndex, exIndex, field, value) => {
     const newDays = [...activeRoutine.days]
