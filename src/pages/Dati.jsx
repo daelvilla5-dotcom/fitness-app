@@ -33,53 +33,44 @@ function Dati({ user }) {
   const [newWeight, setNewWeight] = useState('')
   const [measurements, setMeasurements] = useState([])
   
-  // Stato per la sagoma
   const [selectedArea, setSelectedArea] = useState(null)
   const [showMeasurementInput, setShowMeasurementInput] = useState(false)
   const [editingMeasurement, setEditingMeasurement] = useState(null)
 
+  // useEffect per caricare i dati. Ora include 'activeTab' per ricaricare quando cambi scheda!
   useEffect(() => {
     if (user) {
       const loadFromSupabase = async () => {
-        // Se offline, carica solo da localStorage
         if (!navigator.onLine) {
           console.log('📡 Offline: carica dati da localStorage')
-          const savedProfile = getUserProfile()
-          if (savedProfile) setProfile(savedProfile)
           setWeightLog(getWeightLog() || [])
           setMeasurements(getMeasurements() || [])
           return
         }
         
-        // Se online, prova a caricare da Supabase
         try {
-          const savedProfile = getUserProfile()
-          if (savedProfile) setProfile(savedProfile)
-          
+          // ONLINE: Supabase è la fonte di verità, ANCHE SE restituisce array vuoto []
           const dbWeights = await loadWeightLogsDB(user.id)
-          const finalWeights = dbWeights.length > 0 ? dbWeights : (getWeightLog() || [])
-          setWeightLog(finalWeights)
-          localStorage.setItem('fitness_app_weight_log', JSON.stringify(finalWeights))
+          setWeightLog(dbWeights || [])
+          localStorage.setItem('fitness_app_weight_log', JSON.stringify(dbWeights || []))
 
           const dbMeasurements = await loadMeasurementsDB(user.id)
-          const finalMeasurements = dbMeasurements.length > 0 ? dbMeasurements : (getMeasurements() || [])
-          setMeasurements(finalMeasurements)
-          localStorage.setItem('fitness_app_measurements', JSON.stringify(finalMeasurements))
+          setMeasurements(dbMeasurements || [])
+          localStorage.setItem('fitness_app_measurements', JSON.stringify(dbMeasurements || []))
           
         } catch (err) {
           console.error('Errore caricamento da Supabase:', err)
+          // Solo in caso di ERRORE reale, usa il fallback locale
           setWeightLog(getWeightLog() || [])
           setMeasurements(getMeasurements() || [])
         }
       }
       loadFromSupabase()
     }
-  }, [user])
+  }, [user, activeTab]) // ← AGGIUNTO activeTab: ricarica i dati ogni volta che cambi tab!
 
-  // CALCOLO DINAMICO DELLA MEDIA PESO (Risolve il glitch del peso mancante)
   const averageWeight = (() => {
     if (!weightLog || weightLog.length === 0) return null
-    // Ordina per data decrescente e prendi le ultime 7
     const sorted = [...weightLog].sort((a, b) => new Date(b.date) - new Date(a.date))
     const last7 = sorted.slice(0, 7)
     const sum = last7.reduce((acc, curr) => acc + parseFloat(curr.weight), 0)
@@ -138,7 +129,7 @@ function Dati({ user }) {
 
   const handleEditWeight = async (entryId, currentWeight) => {
     const newWeightStr = prompt('Modifica peso (kg):', currentWeight)
-    if (newWeightStr === null) return // Annullato
+    if (newWeightStr === null) return 
     
     const newWeight = parseFloat(newWeightStr)
     if (!newWeight || newWeight <= 0) {
@@ -167,16 +158,10 @@ function Dati({ user }) {
   }
 
   const handleAddWeight = async (weight, date) => {
-    const cleanWeightData = {
-      weight: parseFloat(weight),
-      date: date
-    }
+    const cleanWeightData = { weight: parseFloat(weight), date: date }
     
     if (!navigator.onLine) {
-      addToQueue({
-        type: 'CREATE_WEIGHT',
-        data: cleanWeightData
-      })
+      addToQueue({ type: 'CREATE_WEIGHT', data: cleanWeightData })
       const savedLog = { id: `pending_${Date.now()}`, weight: cleanWeightData.weight, date: cleanWeightData.date }
       const updatedLog = [savedLog, ...weightLog]
       setWeightLog(updatedLog)
@@ -199,7 +184,6 @@ function Dati({ user }) {
 
   const handleSelectArea = (areaId) => {
     setSelectedArea(areaId)
-    // Nota: getLatestAreaValue è una funzione locale, assicurati che sia importata se la usi
     setEditingMeasurement({
       area: areaId,
       date: new Date().toISOString().split('T')[0],
@@ -405,14 +389,6 @@ function Dati({ user }) {
             <p className="text-xs text-gray-400 text-center mt-3">👆 Clicca su un punto della sagoma per inserire/modificare la misura</p>
           </div>
 
-          {Object.keys(areaLabels).map((areaKey) => {
-            // Nota: Assicurati che getAreaHistory sia importato da userData se lo usi qui
-            // const history = getAreaHistory(areaKey)
-            // if (history.length === 0) return null
-            // return <MeasurementChart key={areaKey} areaName={areaLabels[areaKey]} data={history} color="#00BFFF" />
-            return null // Commentato temporaneamente se getAreaHistory dà problemi, rimuovi questo return null se hai la funzione
-          })}
-
           {measurements.length > 0 && (
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-white mb-3">Storico completo</h3>
@@ -466,7 +442,6 @@ function Dati({ user }) {
         </div>
       )}
 
-      {/* Modal inserimento misura */}
       {showMeasurementInput && editingMeasurement && (
         <MeasurementInput
           areaName={areaLabels[editingMeasurement.area] || editingMeasurement.area}
