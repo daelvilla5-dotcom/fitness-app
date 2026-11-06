@@ -3,123 +3,86 @@ import {
   loadActiveDailyLog as loadActiveDailyLogDB,
   loadTargets as loadTargetsDB
 } from '../utils/supabaseData'
-import { getTargets } from '../utils/userData'
 
 function Panoramica({ user }) {
-  const [dailyTotals, setDailyTotals] = useState({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-  const [targets, setTargets] = useState(getTargets())
-  const [isLoading, setIsLoading] = useState(true)
+  // 🚀 INIZIALIZZAZIONE ISTANTANEA DA LOCALSTORAGE (Niente più glitch a zero!)
+  const [targets, setTargets] = useState(() => {
+    const saved = localStorage.getItem('fitness_app_targets')
+    return saved ? JSON.parse(saved) : { calories: 2000, pro: 150, carb: 250, gra: 70, fib: 30 }
+  })
 
+  const [dailyTotals, setDailyTotals] = useState(() => {
+    const savedLog = localStorage.getItem('fitness_app_daily_log')
+    if (savedLog) {
+      const log = JSON.parse(savedLog)
+      return log.reduce((acc, entry) => {
+        const m = entry.grams / 100
+        return {
+          calories: acc.calories + (entry.calories * m),
+          pro: acc.pro + (entry.pro * m),
+          carb: acc.carb + (entry.carb * m),
+          gra: acc.gra + (entry.gra * m),
+          fib: acc.fib + (entry.fib * m),
+        }
+      }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+    }
+    return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
+  })
+
+  // Sincronizzazione silenziosa in background
   useEffect(() => {
     if (!user) return
 
-    const loadData = async () => {
+    const syncData = async () => {
       try {
-        console.log('🔵 [Panoramica] Caricamento dati...')
-
-        // 1. Carica target da Supabase
         const dbTargets = await loadTargetsDB(user.id)
         if (dbTargets && dbTargets.calories > 0) {
-          console.log('✅ [Panoramica] Target caricati:', dbTargets)
           setTargets(dbTargets)
           localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
-        } else {
-          console.warn('⚠️ [Panoramica] Nessun target trovato su Supabase, uso localStorage')
-          const localTargets = getTargets()
-          setTargets(localTargets)
         }
 
-        // 2. Carica diario attivo da Supabase
         const dbLog = await loadActiveDailyLogDB(user.id)
-        console.log('🔵 [Panoramica] Daily log da Supabase:', dbLog)
-        
         if (dbLog && dbLog.is_active && dbLog.entries) {
-          console.log('🔵 [Panoramica] Entries trovati:', dbLog.entries)
-          console.log('🔵 [Panoramica] Numero entries:', dbLog.entries.length)
-          
-          const totals = calculateTotals(dbLog.entries)
-          console.log('✅ [Panoramica] Totali calcolati:', totals)
+          const totals = dbLog.entries.reduce((acc, entry) => {
+            const m = entry.grams / 100
+            return {
+              calories: acc.calories + (entry.calories * m),
+              pro: acc.pro + (entry.pro * m),
+              carb: acc.carb + (entry.carb * m),
+              gra: acc.gra + (entry.gra * m),
+              fib: acc.fib + (entry.fib * m),
+            }
+          }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
           
           setDailyTotals(totals)
-        } else {
-          console.warn('⚠️ [Panoramica] Nessun diario attivo trovato')
-          setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+          localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries))
         }
       } catch (err) {
-        console.error('❌ [Panoramica] Errore caricamento:', err)
-        setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-        const localTargets = getTargets()
-        if (localTargets) setTargets(localTargets)
-      } finally {
-        setIsLoading(false)
+        console.error('Errore sincronizzazione Panoramica:', err)
       }
     }
 
-    loadData()
+    syncData()
   }, [user])
-
-  const calculateTotals = (entries) => {
-    console.log('🔵 [calculateTotals] Entries ricevuti:', entries)
-    
-    if (!entries || entries.length === 0) {
-      console.warn('⚠️ [calculateTotals] Nessun entry da calcolare')
-      return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
-    }
-
-    const totals = entries.reduce((acc, entry) => {
-      console.log('🔵 [calculateTotals] Processing entry:', entry)
-      
-      const multiplier = entry.grams / 100
-      return {
-        calories: acc.calories + (entry.calories * multiplier),
-        pro: acc.pro + (entry.pro * multiplier),
-        carb: acc.carb + (entry.carb * multiplier),
-        gra: acc.gra + (entry.gra * multiplier),
-        fib: acc.fib + (entry.fib * multiplier),
-      }
-    }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-
-    console.log('✅ [calculateTotals] Totali finali:', totals)
-    return totals
-  }
 
   const round1 = (val) => Math.round(val * 10) / 10
   const remainingCalories = targets.calories - dailyTotals.calories
 
   return (
     <div className="p-4 pb-24">
-      <h2 className="text-2xl font-bold text-electric mb-6 mt-2"> Panoramica</h2>
+      <h2 className="text-2xl font-bold text-electric mb-6 mt-2">📊 Panoramica</h2>
 
       <div className="bg-card border border-border rounded-lg p-6 mb-4">
-        <h3 className="text-lg font-semibold text-white mb-4">Calorie Oggi</h3>
-        
+        <h3 className="text-lg font-semibold text-white mb-4 text-center">Calorie Oggi</h3>
         <div className="flex justify-center mb-6">
           <div className="relative w-48 h-48">
             <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
-              <path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                fill="none"
-                stroke="#1e293b"
-                strokeWidth="3"
-              />
-              <path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                fill="none"
-                stroke="#00BFFF"
-                strokeWidth="3"
-                strokeDasharray={`${Math.min((dailyTotals.calories / targets.calories) * 100, 100)}, 100`}
-                className="transition-all duration-500"
-              />
+              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1e293b" strokeWidth="3" />
+              <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#00BFFF" strokeWidth="3" strokeDasharray={`${Math.min((dailyTotals.calories / targets.calories) * 100, 100)}, 100`} className="transition-all duration-500" />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <p className="text-4xl font-bold text-white">
-                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span>
-              </p>
-              <p className="text-sm text-gray-400 mt-1">
-                {remainingCalories > 0 
-                  ? `${Math.round(remainingCalories)} kcal rimanenti`
-                  : `${Math.round(Math.abs(remainingCalories))} kcal in eccesso`}
-              </p>
+              <p className="text-4xl font-bold text-white">🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span></p>
+              <p className="text-sm text-gray-400 mt-1">{remainingCalories > 0 ? `${Math.round(remainingCalories)} kcal rimanenti` : `${Math.round(Math.abs(remainingCalories))} kcal in eccesso`}</p>
             </div>
           </div>
         </div>
@@ -133,28 +96,17 @@ function Panoramica({ user }) {
             { name: 'Carbo', current: dailyTotals.carb, target: targets.carb, color: '#4ECDC4' },
             { name: 'Grassi', current: dailyTotals.gra, target: targets.gra, color: '#FF6B6B' },
             { name: 'Fibre', current: dailyTotals.fib, target: targets.fib, color: '#95E1D3' },
-          ].map((macro) => {
-            const percentage = Math.min((macro.current / macro.target) * 100, 100)
-            return (
-              <div key={macro.name}>
-                <div className="flex justify-between mb-1">
-                  <span className="text-sm font-medium text-white">{macro.name}</span>
-                  <span className="text-sm text-gray-400">
-                    {round1(macro.current)}g / {macro.target}g
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div
-                    className="h-2 rounded-full transition-all duration-300"
-                    style={{ 
-                      width: `${percentage}%`,
-                      backgroundColor: macro.color 
-                    }}
-                  ></div>
-                </div>
+          ].map((macro) => (
+            <div key={macro.name}>
+              <div className="flex justify-between mb-1">
+                <span className="text-sm font-medium text-white">{macro.name}</span>
+                <span className="text-sm text-gray-400">{round1(macro.current)}g / {macro.target}g</span>
               </div>
-            )
-          })}
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="h-2 rounded-full transition-all duration-300" style={{ width: `${Math.min((macro.current / macro.target) * 100, 100)}%`, backgroundColor: macro.color }}></div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
