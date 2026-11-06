@@ -85,46 +85,55 @@ function Alimentazione({ user }) {
     localStorage.setItem('fitness_app_daily_log', JSON.stringify(dailyLog))
   }, [dailyLog])
 
-  // Caricamento silenzioso da Supabase (NON resetta lo stato locale)
-  useEffect(() => {
-    if (!user) return
+  // Caricamento silenzioso da Supabase (SOVRASCRIVE sempre i dati locali quando online)
+useEffect(() => {
+  if (!user) return
 
-    const syncFromSupabase = async () => {
-      try {
-        const dbProfile = await loadUserProfileDB(user.id)
-        if (dbProfile) {
-          const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
-          setProfile(p)
-          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
-        }
-
-        const avgWeight = getAverageWeight()
-        if (avgWeight) setAverageWeight(avgWeight)
-
-        const dbLog = await loadActiveDailyLogDB(user.id)
-        if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
-          setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
-          setDailyLog(dbLog.entries)
-        }
-
-        const dbTargets = await loadTargetsDB(user.id)
-        if (dbTargets && dbTargets.calories > 0) {
-          setTargets(dbTargets)
-          localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
-        }
-
-        const supabaseFoods = await loadFoodsDB(user.id)
-        if (supabaseFoods.length > 0) {
-          setFoods(supabaseFoods)
-          localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
-        }
-      } catch (err) {
-        console.error('Errore sincronizzazione silenziosa:', err)
+  const syncFromSupabase = async () => {
+    try {
+      console.log('🔄 [Alimentazione] Inizio sincronizzazione da Supabase...')
+      
+      const dbProfile = await loadUserProfileDB(user.id)
+      if (dbProfile) {
+        const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
+        setProfile(p)
+        localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
       }
-    }
 
-    syncFromSupabase()
-  }, [user])
+      const avgWeight = getAverageWeight()
+      if (avgWeight) setAverageWeight(avgWeight)
+
+      // CARICA SEMPRE IL DIARIO DA SUPABASE (anche se vuoto)
+      const dbLog = await loadActiveDailyLogDB(user.id)
+      console.log('📋 [Alimentazione] Diario da Supabase:', dbLog)
+      
+      if (dbLog && dbLog.is_active) {
+        console.log('✅ [Alimentazione] Diario attivo trovato, entries:', dbLog.entries?.length || 0)
+        setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
+        setDailyLog(dbLog.entries || [])
+        localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries || []))
+      } else {
+        console.warn('⚠️ [Alimentazione] Nessun diario attivo su Supabase')
+      }
+
+      const dbTargets = await loadTargetsDB(user.id)
+      if (dbTargets && dbTargets.calories > 0) {
+        setTargets(dbTargets)
+        localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
+      }
+
+      const supabaseFoods = await loadFoodsDB(user.id)
+      if (supabaseFoods.length > 0) {
+        setFoods(supabaseFoods)
+        localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
+      }
+    } catch (err) {
+      console.error('❌ Errore sincronizzazione:', err)
+    }
+  }
+
+  syncFromSupabase()
+}, [user])
 
   // Salvataggio automatico in background
   useEffect(() => {
