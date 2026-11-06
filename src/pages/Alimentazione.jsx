@@ -86,34 +86,34 @@ useEffect(() => {
         setProfile(p)
         localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
       } else {
-        setProfile(getUserProfile())
+        const localProfile = getUserProfile()
+        setProfile(localProfile)
       }
 
       // 2. Carica Peso Medio
-      setAverageWeight(getAverageWeight())
+      const avgWeight = getAverageWeight()
+      setAverageWeight(avgWeight)
 
-      // 3. Carica Giorno Attivo da Supabase SOLO se siamo nella tab pasti
-      if (activeTab === 'pasti') {
-        const dbLog = await loadActiveDailyLogDB(user.id)
-        if (dbLog && dbLog.is_active) {
-          const syncedDay = {
-            id: dbLog.id,
-            startDate: dbLog.start_date,
-            endDate: dbLog.end_date,
-            isActive: true,
-            entries: dbLog.entries || []
-          }
-          setActiveDay(syncedDay)
-          setDailyLog(syncedDay.entries)
-          setDailyTotals(calculateTotals(syncedDay.entries))
-        } else {
-          const localDay = getActiveDay()
-          if (localDay && localDay.isActive) {
-            setActiveDay(localDay)
-            const localLog = getTodayLog()
-            setDailyLog(localLog)
-            setDailyTotals(calculateTotals(localLog))
-          }
+      // 3. Carica Giorno Attivo da Supabase
+      const dbLog = await loadActiveDailyLogDB(user.id)
+      if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
+        const syncedDay = {
+          id: dbLog.id,
+          startDate: dbLog.start_date,
+          endDate: dbLog.end_date,
+          isActive: true,
+          entries: dbLog.entries
+        }
+        setActiveDay(syncedDay)
+        setDailyLog(syncedDay.entries)
+        setDailyTotals(calculateTotals(syncedDay.entries))
+      } else {
+        const localDay = getActiveDay()
+        if (localDay && localDay.isActive) {
+          setActiveDay(localDay)
+          const localLog = getTodayLog()
+          setDailyLog(localLog)
+          setDailyTotals(calculateTotals(localLog))
         }
       }
 
@@ -123,7 +123,8 @@ useEffect(() => {
         setTargets(dbTargets)
         localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
       } else {
-        setTargets(getTargets())
+        const localTargets = getTargets()
+        setTargets(localTargets)
       }
 
       // 5. Carica Alimenti da Supabase
@@ -135,7 +136,8 @@ useEffect(() => {
       }
 
     } catch (err) {
-      console.error('Errore caricamento iniziale da Supabase:', err)
+      console.error('Errore caricamento:', err)
+      // Fallback totale
       setProfile(getUserProfile())
       setAverageWeight(getAverageWeight())
       setActiveDay(getActiveDay())
@@ -147,7 +149,7 @@ useEffect(() => {
   }
 
   initApp()
-}, [user, activeTab]) // ← AGGIUNTO activeTab nelle dipendenze
+}, [user]) // ← RIMOSSO activeTab per evitare ricaricamenti continui
 
   // Salva automaticamente il diario su Supabase quando cambia (Debounce)
   useEffect(() => {
@@ -412,15 +414,24 @@ useEffect(() => {
             </div>
           </div>
 
-          {(!profile || !averageWeight) && (
-            <div className="bg-red-500/10 border border-red-500 rounded-lg p-4 mb-4">
-              <p className="text-red-400 text-sm font-semibold mb-1">⚠️ Dati mancanti</p>
-              <p className="text-gray-400 text-sm">
-                {!profile && 'Completa la sezione Dati → Anagrafica. '}
-                {!averageWeight && 'Inserisci almeno una pesata in Dati → Peso.'}
-              </p>
-            </div>
-          )}
+          {/* Avviso se mancano dati - mostra solo se profile è null o averageWeight è 0 */}
+{profile && (!profile.eta || !profile.altezza) && (
+  <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
+    <p className="text-orange-400 text-sm font-semibold mb-1">️ Profilo incompleto</p>
+    <p className="text-gray-400 text-sm">
+      Completa la sezione Dati → Anagrafica.
+    </p>
+  </div>
+)}
+
+{averageWeight === 0 && (
+  <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
+    <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Peso mancante</p>
+    <p className="text-gray-400 text-sm">
+      Inserisci almeno una pesata in Dati → Peso.
+    </p>
+  </div>
+)}
 
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Oggi</h3>

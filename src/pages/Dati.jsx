@@ -117,14 +117,15 @@ useEffect(() => {
   const handleDeleteWeight = async (entryId) => {
   if (!confirm('Eliminare questa pesata?')) return
   
+  // Rimuovi da Supabase
   try {
-    // Prova a eliminare da Supabase
     await deleteWeightLogDB(entryId)
+    console.log('✅ Pesata eliminata da Supabase')
   } catch (err) {
-    console.log('Pesata non trovata su Supabase, elimino solo da locale')
+    console.log('Pesata non trovata su Supabase o eliminata solo da locale')
   }
   
-  // Elimina da locale comunque
+  // Rimuovi da stato locale
   const updatedLog = weightLog.filter(entry => entry.id !== entryId)
   setWeightLog(updatedLog)
   localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
@@ -296,6 +297,35 @@ const handleAddWeight = async (weight, date) => {
     }
   }
 
+const handleEditWeight = async (entryId, newWeight) => {
+  if (!newWeight || newWeight <= 0) {
+    alert('Inserisci un peso valido!')
+    return
+  }
+  
+  try {
+    // Aggiorna su Supabase
+    const { error } = await supabase
+      .from('weight_logs')
+      .update({ weight: parseFloat(newWeight) })
+      .eq('id', entryId)
+    
+    if (error) throw error
+    
+    // Aggiorna stato locale
+    const updatedLog = weightLog.map(entry => 
+      entry.id === entryId ? { ...entry, weight: parseFloat(newWeight) } : entry
+    )
+    setWeightLog(updatedLog)
+    localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
+    
+    console.log('✅ Pesata aggiornata su Supabase')
+  } catch (err) {
+    console.error('Errore aggiornamento pesata:', err)
+    alert('Errore nell\'aggiornamento della pesata')
+  }
+}
+
   const averageWeight = getAverageWeight()
 
   const tabs = [
@@ -446,24 +476,34 @@ const handleAddWeight = async (weight, date) => {
             ) : (
               <div className="space-y-2">
                 {weightLog.map((entry) => (
-                  <div key={entry.id} className="flex justify-between items-center bg-gray-800 rounded-lg p-3">
-                    <div>
-                      <p className="text-white font-semibold">{entry.weight} kg</p>
-                      <p className="text-xs text-gray-400">{new Date(entry.date).toLocaleDateString('it-IT')}</p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteWeight(entry.id)}
-                      className="text-red-500 hover:text-red-400"
-                    >
-                      
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+  <div key={entry.id} className="flex justify-between items-center bg-gray-800 rounded-lg p-3">
+    <div>
+      <p className="text-white font-semibold">{entry.weight} kg</p>
+      <p className="text-xs text-gray-400">{new Date(entry.date).toLocaleDateString('it-IT')}</p>
+    </div>
+    <div className="flex gap-2">
+      <button
+        onClick={() => {
+          const newWeight = prompt('Nuovo peso (kg):', entry.weight)
+          if (newWeight !== null) {
+            handleEditWeight(entry.id, parseFloat(newWeight))
+          }
+        }}
+        className="text-blue-400 hover:text-blue-300 text-sm"
+        title="Modifica"
+      >
+        ✎
+      </button>
+      <button
+        onClick={() => handleDeleteWeight(entry.id)}
+        className="text-red-500 hover:text-red-400"
+        title="Elimina"
+      >
+        
+      </button>
+    </div>
+  </div>
+))}
 
       {/* Tab Misure */}
       {activeTab === 'misure' && (
