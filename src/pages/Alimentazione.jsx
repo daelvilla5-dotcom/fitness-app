@@ -39,8 +39,10 @@ function Alimentazione({ user }) {
   const [dailyTotals, setDailyTotals] = useState({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   const [activeDay, setActiveDay] = useState(null)
   
-  const [profile, setProfile] = useState(null)
-  const [averageWeight, setAverageWeight] = useState(null)
+  // Inizializza con i dati locali per evitare il "glitch" di caricamento
+  const [profile, setProfile] = useState(getUserProfile())
+  const [averageWeight, setAverageWeight] = useState(getAverageWeight())
+  const [isLoading, setIsLoading] = useState(true)
 
   const [attivita, setAttivita] = useState('moderata')
   const [obiettivo, setObiettivo] = useState('mantenimento')
@@ -54,7 +56,6 @@ function Alimentazione({ user }) {
   const [targets, setTargets] = useState(getTargets())
   const [editingGrams, setEditingGrams] = useState(null)
 
-  // Funzione helper per calcolare i totali direttamente dall'array dailyLog (per evitare dipendenze dal localStorage)
   const calculateTotals = (log) => {
     return log.reduce((acc, entry) => {
       const multiplier = entry.grams / 100
@@ -68,92 +69,77 @@ function Alimentazione({ user }) {
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
 
-  // Sostituisci l'intero useEffect di inizializzazione con questo:
-useEffect(() => {
-  if (!user) return
+  useEffect(() => {
+    if (!user) return
 
-  const initApp = async () => {
-    try {
-      // 1. Carica Profilo da Supabase
-      const dbProfile = await loadUserProfileDB(user.id)
-      if (dbProfile) {
-        const p = { 
-          genere: dbProfile.genere || 'M', 
-          eta: dbProfile.eta, 
-          altezza: dbProfile.altezza,
-          dataNascita: dbProfile.data_nascita
+    const initApp = async () => {
+      try {
+        // 1. Carica Profilo da Supabase
+        const dbProfile = await loadUserProfileDB(user.id)
+        if (dbProfile) {
+          const p = { 
+            genere: dbProfile.genere || 'M', 
+            eta: dbProfile.eta, 
+            altezza: dbProfile.altezza,
+            dataNascita: dbProfile.data_nascita
+          }
+          setProfile(p)
+          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
         }
-        setProfile(p)
-        localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
-      } else {
-        const localProfile = getUserProfile()
-        setProfile(localProfile)
-      }
 
-      // 2. Carica Peso Medio
-      const avgWeight = getAverageWeight()
-      setAverageWeight(avgWeight)
+        // 2. Aggiorna Peso Medio (Dati.jsx dovrebbe averlo già sincronizzato in localStorage)
+        setAverageWeight(getAverageWeight())
 
-      // 3. Carica Giorno Attivo da Supabase
-      const dbLog = await loadActiveDailyLogDB(user.id)
-      if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
-        const syncedDay = {
-          id: dbLog.id,
-          startDate: dbLog.start_date,
-          endDate: dbLog.end_date,
-          isActive: true,
-          entries: dbLog.entries
+        // 3. Carica Giorno Attivo da Supabase
+        const dbLog = await loadActiveDailyLogDB(user.id)
+        if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
+          const syncedDay = {
+            id: dbLog.id,
+            startDate: dbLog.start_date,
+            endDate: dbLog.end_date,
+            isActive: true,
+            entries: dbLog.entries
+          }
+          setActiveDay(syncedDay)
+          setDailyLog(syncedDay.entries)
+          setDailyTotals(calculateTotals(syncedDay.entries))
+        } else {
+          const localDay = getActiveDay()
+          if (localDay && localDay.isActive) {
+            setActiveDay(localDay)
+            const localLog = getTodayLog()
+            setDailyLog(localLog)
+            setDailyTotals(calculateTotals(localLog))
+          }
         }
-        setActiveDay(syncedDay)
-        setDailyLog(syncedDay.entries)
-        setDailyTotals(calculateTotals(syncedDay.entries))
-      } else {
-        const localDay = getActiveDay()
-        if (localDay && localDay.isActive) {
-          setActiveDay(localDay)
-          const localLog = getTodayLog()
-          setDailyLog(localLog)
-          setDailyTotals(calculateTotals(localLog))
+
+        // 4. Carica Obiettivi da Supabase
+        const dbTargets = await loadTargetsDB(user.id)
+        if (dbTargets) {
+          setTargets(dbTargets)
+          localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
         }
-      }
 
-      // 4. Carica Obiettivi da Supabase
-      const dbTargets = await loadTargetsDB(user.id)
-      if (dbTargets) {
-        setTargets(dbTargets)
-        localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
-      } else {
-        const localTargets = getTargets()
-        setTargets(localTargets)
-      }
+        // 5. Carica Alimenti da Supabase
+        const supabaseFoods = await loadFoodsDB(user.id)
+        if (supabaseFoods.length > 0) {
+          setFoods(supabaseFoods)
+        }
 
-      // 5. Carica Alimenti da Supabase
-      const supabaseFoods = await loadFoodsDB(user.id)
-      if (supabaseFoods.length > 0) {
-        setFoods(supabaseFoods)
-      } else {
-        setFoods(getFoods())
+      } catch (err) {
+        console.error('Errore caricamento da Supabase:', err)
+      } finally {
+        // Segnala che il caricamento è finito (anche se è fallito, useremo i fallback locali)
+        setIsLoading(false)
       }
-
-    } catch (err) {
-      console.error('Errore caricamento:', err)
-      // Fallback totale
-      setProfile(getUserProfile())
-      setAverageWeight(getAverageWeight())
-      setActiveDay(getActiveDay())
-      setDailyLog(getTodayLog())
-      setDailyTotals(calculateTotals(getTodayLog()))
-      setTargets(getTargets())
-      setFoods(getFoods())
     }
-  }
 
-  initApp()
-}, [user]) // ← RIMOSSO activeTab per evitare ricaricamenti continui
+    initApp()
+  }, [user])
 
   // Salva automaticamente il diario su Supabase quando cambia (Debounce)
   useEffect(() => {
-    if (user && activeDay && activeDay.isActive) {
+    if (user && activeDay && activeDay.isActive && dailyLog.length > 0) {
       const saveTimer = setTimeout(async () => {
         try {
           await saveDailyLogDB(user.id, {
@@ -170,7 +156,7 @@ useEffect(() => {
     }
   }, [user, activeDay, dailyLog])
 
-    const handleStartNewDay = async () => {
+  const handleStartNewDay = async () => {
     if (!user) {
       alert("⚠️ ERRORE: Nessun utente loggato!")
       return
@@ -186,14 +172,10 @@ useEffect(() => {
           is_active: false,
           entries: dailyLog
         })
-        console.log("✅ Vecchio giorno chiuso su Supabase")
       } catch (err) {
-        alert(`❌ ERRORE nel chiudere il giorno su Supabase:\n${err.message}`)
-        console.error(err)
-        return // Blocca l'esecuzione se fallisce
+        console.error('Errore chiusura giorno:', err)
       }
-      
-      endCurrentDay() // Fallback locale
+      endCurrentDay()
     }
 
     const newDayData = {
@@ -205,8 +187,6 @@ useEffect(() => {
 
     try {
       const saved = await saveDailyLogDB(user.id, newDayData)
-      alert(`✅ SUCCESSO! Nuovo giorno creato su Supabase.\nID: ${saved.id}`)
-      
       const newActiveDay = {
         id: saved.id,
         startDate: saved.start_date,
@@ -218,17 +198,21 @@ useEffect(() => {
       setDailyLog([])
       setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
     } catch (err) {
-      alert(`❌ ERRORE CRITICO nel salvare su Supabase:\n${err.message}`)
-      console.error("ERRORE DETTAGLIATO:", err)
+      console.error("ERRORE salvataggio nuovo giorno:", err)
+      // Fallback locale
+      startNewDay()
+      setActiveDay(getActiveDay())
+      setDailyLog(getTodayLog())
+      setDailyTotals(calculateTotals(getTodayLog()))
     }
   }
 
   const calcolaFabbisogno = async () => {
-    if (!profile) {
+    if (!profile || !profile.eta || !profile.altezza) {
       alert('Completa prima la sezione Dati → Anagrafica!')
       return
     }
-    if (!averageWeight) {
+    if (!averageWeight || averageWeight === 0) {
       alert('Inserisci almeno una pesata nella sezione Dati → Peso!')
       return
     }
@@ -278,13 +262,13 @@ useEffect(() => {
 
     setTargets(newTargets)
     
-    // Salva SU SUPABASE e in locale
     try {
       await saveTargetsDB(user.id, newTargets)
+      localStorage.setItem('fitness_app_targets', JSON.stringify(newTargets))
     } catch (err) {
       console.error('Errore salvataggio obiettivi:', err)
+      saveTargets(newTargets) // Fallback locale
     }
-    saveTargets(newTargets) // Fallback locale
     
     updatePreset(obiettivo, multipliers)
     alert(`Obiettivi salvati e sincronizzati! Preset "${obiettivo}" aggiornato.`)
@@ -414,44 +398,40 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Avviso se mancano dati - mostra solo se profile è null o averageWeight è 0 */}
-{profile && (!profile.eta || !profile.altezza) && (
-  <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
-    <p className="text-orange-400 text-sm font-semibold mb-1">️ Profilo incompleto</p>
-    <p className="text-gray-400 text-sm">
-      Completa la sezione Dati → Anagrafica.
-    </p>
-  </div>
-)}
+          {/* Avviso se mancano dati - mostra SOLO dopo il caricamento iniziale */}
+          {!isLoading && profile && (!profile.eta || !profile.altezza) && (
+            <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
+              <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Profilo incompleto</p>
+              <p className="text-gray-400 text-sm">Completa la sezione Dati → Anagrafica.</p>
+            </div>
+          )}
 
-{averageWeight === 0 && (
-  <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
-    <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Peso mancante</p>
-    <p className="text-gray-400 text-sm">
-      Inserisci almeno una pesata in Dati → Peso.
-    </p>
-  </div>
-)}
+          {!isLoading && (!averageWeight || averageWeight === 0) && (
+            <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
+              <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Peso mancante</p>
+              <p className="text-gray-400 text-sm">Inserisci almeno una pesata in Dati → Peso.</p>
+            </div>
+          )}
 
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Oggi</h3>
             <div className="text-center mb-4">
               <p className="text-3xl font-bold text-white">
-                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span>
+                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories || 2000} kcal</span>
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                {targets.calories - dailyTotals.calories > 0 
-                  ? `${Math.round(targets.calories - dailyTotals.calories)} kcal rimanenti`
-                  : `${Math.round(dailyTotals.calories - targets.calories)} kcal in eccesso`}
+                {(targets.calories || 2000) - dailyTotals.calories > 0 
+                  ? `${Math.round((targets.calories || 2000) - dailyTotals.calories)} kcal rimanenti`
+                  : `${Math.round(dailyTotals.calories - (targets.calories || 2000))} kcal in eccesso`}
               </p>
             </div>
 
             <div className="space-y-3">
               {[
-                { name: 'Pro', current: dailyTotals.pro, target: targets.pro, color: '#00BFFF' },
-                { name: 'Carbo', current: dailyTotals.carb, target: targets.carb, color: '#4ECDC4' },
-                { name: 'Grassi', current: dailyTotals.gra, target: targets.gra, color: '#FF6B6B' },
-                { name: 'Fibre', current: dailyTotals.fib, target: targets.fib, color: '#95E1D3' },
+                { name: 'Pro', current: dailyTotals.pro, target: targets.pro || 150, color: '#00BFFF' },
+                { name: 'Carbo', current: dailyTotals.carb, target: targets.carb || 250, color: '#4ECDC4' },
+                { name: 'Grassi', current: dailyTotals.gra, target: targets.gra || 70, color: '#FF6B6B' },
+                { name: 'Fibre', current: dailyTotals.fib, target: targets.fib || 30, color: '#95E1D3' },
               ].map((macro) => {
                 const percentage = Math.min((macro.current / macro.target) * 100, 100)
                 return (
@@ -699,24 +679,24 @@ useEffect(() => {
           <div className="bg-electric/10 border border-electric rounded-lg p-4">
             <h3 className="text-lg font-semibold text-electric mb-3">Obiettivi Attuali</h3>
             <div className="text-center mb-3">
-              <p className="text-3xl font-bold text-white">🔥 {targets.calories} <span className="text-lg text-gray-400">kcal</span></p>
+              <p className="text-3xl font-bold text-white">🔥 {targets.calories || 2000} <span className="text-lg text-gray-400">kcal</span></p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Pro</p>
-                <p className="text-xl font-bold text-white">{targets.pro}g</p>
+                <p className="text-xl font-bold text-white">{targets.pro || 150}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Carbo</p>
-                <p className="text-xl font-bold text-white">{targets.carb}g</p>
+                <p className="text-xl font-bold text-white">{targets.carb || 250}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Grassi</p>
-                <p className="text-xl font-bold text-white">{targets.gra}g</p>
+                <p className="text-xl font-bold text-white">{targets.gra || 70}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Fibre</p>
-                <p className="text-xl font-bold text-white">{targets.fib}g</p>
+                <p className="text-xl font-bold text-white">{targets.fib || 30}g</p>
               </div>
             </div>
           </div>
