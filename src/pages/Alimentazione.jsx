@@ -34,29 +34,22 @@ function Alimentazione({ user }) {
   const [activeTab, setActiveTab] = useState('pasti')
   const [showAddFoodModal, setShowAddFoodModal] = useState(false)
   const [editingFood, setEditingFood] = useState(null)
-  const [foods, setFoods] = useState([])
-  const [dailyLog, setDailyLog] = useState([])
-  const [dailyTotals, setDailyTotals] = useState({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-  const [activeDay, setActiveDay] = useState(null)
   
-  // Inizializza con i dati locali per evitare il "glitch" di caricamento
+  // INIZIALIZZA CON I DATI LOCALI PER EVITARE IL GLITCH
+  const [foods, setFoods] = useState(getFoods())
+  const [dailyLog, setDailyLog] = useState(getTodayLog())
+  const [dailyTotals, setDailyTotals] = useState(calculateTotals(getTodayLog()))
+  const [activeDay, setActiveDay] = useState(getActiveDay())
   const [profile, setProfile] = useState(getUserProfile())
   const [averageWeight, setAverageWeight] = useState(getAverageWeight())
-  const [isLoading, setIsLoading] = useState(true)
-
+  const [targets, setTargets] = useState(getTargets())
+  
   const [attivita, setAttivita] = useState('moderata')
   const [obiettivo, setObiettivo] = useState('mantenimento')
-  
-  const [multipliers, setMultipliers] = useState({
-    pro: 1.6,
-    gra: 0.9,
-    fib: 30,
-  })
-
-  const [targets, setTargets] = useState(getTargets())
+  const [multipliers, setMultipliers] = useState({ pro: 1.6, gra: 0.9, fib: 30 })
   const [editingGrams, setEditingGrams] = useState(null)
 
-  const calculateTotals = (log) => {
+  function calculateTotals(log) {
     return log.reduce((acc, entry) => {
       const multiplier = entry.grams / 100
       return {
@@ -69,12 +62,13 @@ function Alimentazione({ user }) {
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
 
+  // Carica da Supabase SENZA resettare i valori locali
   useEffect(() => {
     if (!user) return
 
-    const initApp = async () => {
+    const loadFromSupabase = async () => {
       try {
-        // 1. Carica Profilo da Supabase
+        // 1. Profilo
         const dbProfile = await loadUserProfileDB(user.id)
         if (dbProfile) {
           const p = { 
@@ -87,40 +81,31 @@ function Alimentazione({ user }) {
           localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
         }
 
-        // 2. Aggiorna Peso Medio (Dati.jsx dovrebbe averlo già sincronizzato in localStorage)
-        setAverageWeight(getAverageWeight())
+        // 2. Peso Medio
+        const avgWeight = getAverageWeight()
+        if (avgWeight) setAverageWeight(avgWeight)
 
-        // 3. Carica Giorno Attivo da Supabase
+        // 3. Giorno Attivo (solo se c'è su Supabase)
         const dbLog = await loadActiveDailyLogDB(user.id)
         if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
-          const syncedDay = {
+          setActiveDay({
             id: dbLog.id,
             startDate: dbLog.start_date,
             endDate: dbLog.end_date,
             isActive: true,
-            entries: dbLog.entries
-          }
-          setActiveDay(syncedDay)
-          setDailyLog(syncedDay.entries)
-          setDailyTotals(calculateTotals(syncedDay.entries))
-        } else {
-          const localDay = getActiveDay()
-          if (localDay && localDay.isActive) {
-            setActiveDay(localDay)
-            const localLog = getTodayLog()
-            setDailyLog(localLog)
-            setDailyTotals(calculateTotals(localLog))
-          }
+          })
+          setDailyLog(dbLog.entries)
+          setDailyTotals(calculateTotals(dbLog.entries))
         }
 
-        // 4. Carica Obiettivi da Supabase
+        // 4. Target (PRIORITARIO: se c'è su Supabase, usa quelli)
         const dbTargets = await loadTargetsDB(user.id)
-        if (dbTargets) {
+        if (dbTargets && dbTargets.calories > 0) {
           setTargets(dbTargets)
           localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
         }
 
-        // 5. Carica Alimenti da Supabase
+        // 5. Alimenti
         const supabaseFoods = await loadFoodsDB(user.id)
         if (supabaseFoods.length > 0) {
           setFoods(supabaseFoods)
@@ -128,16 +113,13 @@ function Alimentazione({ user }) {
 
       } catch (err) {
         console.error('Errore caricamento da Supabase:', err)
-      } finally {
-        // Segnala che il caricamento è finito (anche se è fallito, useremo i fallback locali)
-        setIsLoading(false)
       }
     }
 
-    initApp()
+    loadFromSupabase()
   }, [user])
 
-  // Salva automaticamente il diario su Supabase quando cambia (Debounce)
+  // Salva automaticamente il diario su Supabase quando cambia
   useEffect(() => {
     if (user && activeDay && activeDay.isActive && dailyLog.length > 0) {
       const saveTimer = setTimeout(async () => {
@@ -157,10 +139,7 @@ function Alimentazione({ user }) {
   }, [user, activeDay, dailyLog])
 
   const handleStartNewDay = async () => {
-    if (!user) {
-      alert("⚠️ ERRORE: Nessun utente loggato!")
-      return
-    }
+    if (!user) return
 
     if (activeDay && activeDay.isActive) {
       if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
@@ -187,19 +166,16 @@ function Alimentazione({ user }) {
 
     try {
       const saved = await saveDailyLogDB(user.id, newDayData)
-      const newActiveDay = {
+      setActiveDay({
         id: saved.id,
         startDate: saved.start_date,
         endDate: saved.end_date,
         isActive: true,
-        entries: []
-      }
-      setActiveDay(newActiveDay)
+      })
       setDailyLog([])
       setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
     } catch (err) {
       console.error("ERRORE salvataggio nuovo giorno:", err)
-      // Fallback locale
       startNewDay()
       setActiveDay(getActiveDay())
       setDailyLog(getTodayLog())
@@ -260,18 +236,23 @@ function Alimentazione({ user }) {
       fib: fibre,
     }
 
+    // Aggiorna subito lo stato locale (NESSUN GLITCH)
     setTargets(newTargets)
+    localStorage.setItem('fitness_app_targets', JSON.stringify(newTargets))
     
+    // Salva su Supabase
     try {
+      console.log('💾 Salvataggio target su Supabase:', newTargets)
       await saveTargetsDB(user.id, newTargets)
-      localStorage.setItem('fitness_app_targets', JSON.stringify(newTargets))
+      console.log('✅ Target salvati su Supabase')
     } catch (err) {
-      console.error('Errore salvataggio obiettivi:', err)
-      saveTargets(newTargets) // Fallback locale
+      console.error('❌ Errore salvataggio target su Supabase:', err)
+      // Fallback: salva solo in locale
+      saveTargets(newTargets)
     }
     
     updatePreset(obiettivo, multipliers)
-    alert(`Obiettivi salvati e sincronizzati! Preset "${obiettivo}" aggiornato.`)
+    alert(`Obiettivi salvati! Calorie: ${calorieTotali} kcal`)
   }
 
   const applyPreset = (presetName) => {
@@ -398,40 +379,25 @@ function Alimentazione({ user }) {
             </div>
           </div>
 
-          {/* Avviso se mancano dati - mostra SOLO dopo il caricamento iniziale */}
-          {!isLoading && profile && (!profile.eta || !profile.altezza) && (
-            <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
-              <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Profilo incompleto</p>
-              <p className="text-gray-400 text-sm">Completa la sezione Dati → Anagrafica.</p>
-            </div>
-          )}
-
-          {!isLoading && (!averageWeight || averageWeight === 0) && (
-            <div className="bg-orange-500/10 border border-orange-500 rounded-lg p-4 mb-4">
-              <p className="text-orange-400 text-sm font-semibold mb-1">⚠️ Peso mancante</p>
-              <p className="text-gray-400 text-sm">Inserisci almeno una pesata in Dati → Peso.</p>
-            </div>
-          )}
-
           <div className="bg-card border border-border rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-white mb-3">Oggi</h3>
             <div className="text-center mb-4">
               <p className="text-3xl font-bold text-white">
-                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories || 2000} kcal</span>
+                🔥 {Math.round(dailyTotals.calories)} <span className="text-lg text-gray-400">/ {targets.calories} kcal</span>
               </p>
               <p className="text-sm text-gray-400 mt-1">
-                {(targets.calories || 2000) - dailyTotals.calories > 0 
-                  ? `${Math.round((targets.calories || 2000) - dailyTotals.calories)} kcal rimanenti`
-                  : `${Math.round(dailyTotals.calories - (targets.calories || 2000))} kcal in eccesso`}
+                {targets.calories - dailyTotals.calories > 0 
+                  ? `${Math.round(targets.calories - dailyTotals.calories)} kcal rimanenti`
+                  : `${Math.round(dailyTotals.calories - targets.calories)} kcal in eccesso`}
               </p>
             </div>
 
             <div className="space-y-3">
               {[
-                { name: 'Pro', current: dailyTotals.pro, target: targets.pro || 150, color: '#00BFFF' },
-                { name: 'Carbo', current: dailyTotals.carb, target: targets.carb || 250, color: '#4ECDC4' },
-                { name: 'Grassi', current: dailyTotals.gra, target: targets.gra || 70, color: '#FF6B6B' },
-                { name: 'Fibre', current: dailyTotals.fib, target: targets.fib || 30, color: '#95E1D3' },
+                { name: 'Pro', current: dailyTotals.pro, target: targets.pro, color: '#00BFFF' },
+                { name: 'Carbo', current: dailyTotals.carb, target: targets.carb, color: '#4ECDC4' },
+                { name: 'Grassi', current: dailyTotals.gra, target: targets.gra, color: '#FF6B6B' },
+                { name: 'Fibre', current: dailyTotals.fib, target: targets.fib, color: '#95E1D3' },
               ].map((macro) => {
                 const percentage = Math.min((macro.current / macro.target) * 100, 100)
                 return (
@@ -679,24 +645,24 @@ function Alimentazione({ user }) {
           <div className="bg-electric/10 border border-electric rounded-lg p-4">
             <h3 className="text-lg font-semibold text-electric mb-3">Obiettivi Attuali</h3>
             <div className="text-center mb-3">
-              <p className="text-3xl font-bold text-white">🔥 {targets.calories || 2000} <span className="text-lg text-gray-400">kcal</span></p>
+              <p className="text-3xl font-bold text-white">🔥 {targets.calories} <span className="text-lg text-gray-400">kcal</span></p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Pro</p>
-                <p className="text-xl font-bold text-white">{targets.pro || 150}g</p>
+                <p className="text-xl font-bold text-white">{targets.pro}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Carbo</p>
-                <p className="text-xl font-bold text-white">{targets.carb || 250}g</p>
+                <p className="text-xl font-bold text-white">{targets.carb}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Grassi</p>
-                <p className="text-xl font-bold text-white">{targets.gra || 70}g</p>
+                <p className="text-xl font-bold text-white">{targets.gra}g</p>
               </div>
               <div className="bg-gray-800 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-400">Fibre</p>
-                <p className="text-xl font-bold text-white">{targets.fib || 30}g</p>
+                <p className="text-xl font-bold text-white">{targets.fib}g</p>
               </div>
             </div>
           </div>
