@@ -16,19 +16,20 @@ function RoutineBuilder({ user, onStartWorkout }) {
   const [editingDayId, setEditingDayId] = useState(null)
   const [editingDayName, setEditingDayName] = useState('')
   
+  // Stato per i select controllati (uno per ogni giorno)
+  const [selectedExerciseIds, setSelectedExerciseIds] = useState({})
+  
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [shareLink, setShareLink] = useState('')
   const [sharingRoutine, setSharingRoutine] = useState(null)
 
   useEffect(() => {
-    // Carica gli esercizi DA SUPABASE (non più da localStorage!)
     if (user) {
       loadExercises(user.id).then(dbExercises => {
         console.log('📋 Esercizi caricati da Supabase:', dbExercises.length)
         if (dbExercises.length > 0) {
           setExercises(dbExercises)
         } else {
-          // Fallback: esercizi locali se Supabase è vuoto
           const local = JSON.parse(localStorage.getItem('fitness_app_exercises') || '[]')
           setExercises(local)
         }
@@ -133,12 +134,9 @@ function RoutineBuilder({ user, onStartWorkout }) {
   const addExerciseToDay = (dayIndex, exercise) => {
     if (!activeRoutine || !exercise) return
     
-    console.log('➕ Aggiunta esercizio:', exercise.name, 'al giorno', dayIndex)
-    
     const newDays = [...activeRoutine.days]
     const currentDay = { ...newDays[dayIndex] }
     
-    // Verifica se l'esercizio è già presente
     const alreadyExists = currentDay.exercises.some(ex => ex.exerciseId === exercise.id)
     
     if (alreadyExists) {
@@ -146,7 +144,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
       return
     }
     
-    // AGGIUNGI (non sostituire!) l'esercizio alla lista esistente
     currentDay.exercises = [
       ...currentDay.exercises,
       {
@@ -160,6 +157,9 @@ function RoutineBuilder({ user, onStartWorkout }) {
     
     newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
+    
+    // Resetta il select per questo giorno
+    setSelectedExerciseIds(prev => ({ ...prev, [dayIndex]: '' }))
   }
 
   const updateExerciseTarget = (dayIndex, exIndex, field, value) => {
@@ -167,7 +167,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
     const currentDay = { ...newDays[dayIndex] }
     const currentExercises = [...currentDay.exercises]
     
-    // Aggiorna solo il campo specifico dell'esercizio specifico
     currentExercises[exIndex] = {
       ...currentExercises[exIndex],
       [field]: value
@@ -184,6 +183,16 @@ function RoutineBuilder({ user, onStartWorkout }) {
     currentDay.exercises = currentDay.exercises.filter((_, idx) => idx !== exIndex)
     newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
+  }
+
+  // Handler per il cambio del select
+  const handleExerciseSelect = (dayIndex, exerciseId) => {
+    if (!exerciseId) return
+    
+    const ex = exercises.find(ex => ex.id === exerciseId)
+    if (ex) {
+      addExerciseToDay(dayIndex, ex)
+    }
   }
 
   return (
@@ -308,34 +317,17 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 ))}
               </div>
 
-              {/* Menu a tendina con bottone Aggiungi */}
-<div className="flex gap-2">
-  <select
-    id={`exercise-select-${dayIndex}`}
-    className="flex-1 bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
-  >
-    <option value="">+ Aggiungi esercizio...</option>
-    {exercises.map(ex => (
-      <option key={ex.id} value={ex.id}>{ex.name}</option>
-    ))}
-  </select>
-  <button
-    onClick={() => {
-      const select = document.getElementById(`exercise-select-${dayIndex}`)
-      const exId = select.value
-      if (exId) {
-        const ex = exercises.find(ex => ex.id === exId)
-        if (ex) {
-          addExerciseToDay(dayIndex, ex)
-          select.value = '' // Reset dopo l'aggiunta
-        }
-      }
-    }}
-    className="bg-electric text-black font-bold px-4 py-2 rounded-lg text-sm active:scale-95 transition-transform"
-  >
-    +
-  </button>
-</div>
+              {/* SELECT CONTROLLATO - Si aggiunge automaticamente al click */}
+              <select
+                value={selectedExerciseIds[dayIndex] || ''}
+                onChange={(e) => handleExerciseSelect(dayIndex, e.target.value)}
+                className="w-full bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
+              >
+                <option value="">+ Aggiungi esercizio...</option>
+                {exercises.map(ex => (
+                  <option key={ex.id} value={ex.id}>{ex.name}</option>
+                ))}
+              </select>
             </div>
           ))}
 
