@@ -38,7 +38,7 @@ function Allenamento({ user }) {
       </div>
 
       {/* Contenuto Tab */}
-      {activeTab === 'esercizi' && <ExerciseManager />}
+      {activeTab === 'esercizi' && <ExerciseManager user={user} />}
       {activeTab === 'schede' && (
         <RoutineBuilder user={user} onStartWorkout={handleStartWorkout} />
       )}

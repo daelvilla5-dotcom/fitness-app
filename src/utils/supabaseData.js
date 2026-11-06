@@ -656,3 +656,81 @@ export async function loadDailyLogsHistory(userId) {
     return []
   }
 }
+
+// ============================================
+// ESERCIZI (exercises)
+// ============================================
+
+export async function loadExercises(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .eq('user_id', userId)
+      .order('name')
+
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.error('Errore caricamento esercizi:', err)
+    return []
+  }
+}
+
+export async function saveExercise(userId, exerciseData) {
+  try {
+    const newId = crypto.randomUUID() // Genera un ID univoco
+    const { data, error } = await supabase
+      .from('exercises')
+      .insert({
+        id: newId,
+        user_id: userId,
+        name: exerciseData.name,
+        muscle: exerciseData.muscle || 'Generale'
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore salvataggio esercizio:', err)
+    throw err
+  }
+}
+
+export async function updateExercise(userId, exerciseData) {
+  try {
+    const { data, error } = await supabase
+      .from('exercises')
+      .update({
+        name: exerciseData.name,
+        muscle: exerciseData.muscle
+      })
+      .eq('id', exerciseData.id)
+      .eq('user_id', userId)
+      .select()
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (err) {
+    console.error('Errore aggiornamento esercizio:', err)
+    throw err
+  }
+}
+
+export async function deleteExercise(exerciseId) {
+  try {
+    const { error } = await supabase
+      .from('exercises')
+      .delete()
+      .eq('id', exerciseId)
+
+    if (error) throw error
+    return true
+  } catch (err) {
+    console.error('Errore eliminazione esercizio:', err)
+    throw err
+  }
+}

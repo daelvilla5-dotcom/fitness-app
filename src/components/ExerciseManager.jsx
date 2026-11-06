@@ -1,25 +1,58 @@
 import { useState, useEffect } from 'react'
-import { getExercises, saveExercise, deleteExercise, updateExercise } from '../utils/workoutDatabase'
+import { 
+  loadExercises, 
+  saveExercise, 
+  deleteExercise, 
+  updateExercise 
+} from '../utils/supabaseData'
 
-function ExerciseManager({ onSelectExercise }) {
+function ExerciseManager({ user, onSelectExercise }) {
   const [exercises, setExercises] = useState([])
   const [newExercise, setNewExercise] = useState({ name: '', muscle: '' })
   const [editingExercise, setEditingExercise] = useState(null)
+  const [isLoading, setIsLoading] = useState(true)
 
+  // Carica gli esercizi da Supabase all'avvio
   useEffect(() => {
-    setExercises(getExercises())
-  }, [])
+    if (user) {
+      loadExercises(user.id).then(dbExercises => {
+        if (dbExercises.length > 0) {
+          setExercises(dbExercises)
+        } else {
+          // Fallback: se non c'è nulla su Supabase, carica i default/locali
+          const local = JSON.parse(localStorage.getItem('fitness_app_exercises') || '[]')
+          setExercises(local)
+        }
+        setIsLoading(false)
+      })
+    }
+  }, [user])
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newExercise.name.trim()) return alert('Inserisci il nome dell\'esercizio!')
-    const updatedList = saveExercise(newExercise)
-    setExercises(updatedList)
-    setNewExercise({ name: '', muscle: '' })
+    if (!user) return alert('Devi essere loggato!')
+    
+    try {
+      const saved = await saveExercise(user.id, newExercise)
+      const updatedList = [...exercises, saved]
+      setExercises(updatedList)
+      localStorage.setItem('fitness_app_exercises', JSON.stringify(updatedList)) // Backup locale
+      setNewExercise({ name: '', muscle: '' })
+    } catch (err) {
+      alert('Errore nel salvataggio dell\'esercizio')
+    }
   }
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (confirm('Eliminare esercizio?')) {
-      setExercises(deleteExercise(id))
+      try {
+        await deleteExercise(id)
+        const updatedList = exercises.filter(ex => ex.id !== id)
+        setExercises(updatedList)
+        localStorage.setItem('fitness_app_exercises', JSON.stringify(updatedList))
+      } catch (err) {
+        alert('Errore nell\'eliminazione')
+      }
     }
   }
 
@@ -27,12 +60,22 @@ function ExerciseManager({ onSelectExercise }) {
     setEditingExercise({ ...ex })
   }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingExercise.name.trim()) return alert('Il nome non può essere vuoto!')
-    const updatedList = updateExercise(editingExercise)
-    setExercises(updatedList)
-    setEditingExercise(null)
+    if (!user) return
+    
+    try {
+      const updated = await updateExercise(user.id, editingExercise)
+      const updatedList = exercises.map(ex => ex.id === updated.id ? updated : ex)
+      setExercises(updatedList)
+      localStorage.setItem('fitness_app_exercises', JSON.stringify(updatedList))
+      setEditingExercise(null)
+    } catch (err) {
+      alert('Errore nell\'aggiornamento')
+    }
   }
+
+  if (isLoading) return <p className="text-center text-gray-400">Caricamento esercizi...</p>
 
   return (
     <div className="space-y-4">
@@ -70,7 +113,6 @@ function ExerciseManager({ onSelectExercise }) {
           {exercises.map((ex) => (
             <div key={ex.id} className="bg-gray-800 rounded-lg p-3">
               {editingExercise && editingExercise.id === ex.id ? (
-                // Modalità modifica
                 <div className="space-y-2">
                   <div className="flex gap-2">
                     <input
@@ -78,46 +120,28 @@ function ExerciseManager({ onSelectExercise }) {
                       value={editingExercise.name}
                       onChange={(e) => setEditingExercise({ ...editingExercise, name: e.target.value })}
                       className="flex-1 bg-gray-900 border border-electric text-white rounded px-2 py-1 text-sm focus:outline-none"
-                      placeholder="Nome"
                     />
                     <input
                       type="text"
                       value={editingExercise.muscle}
                       onChange={(e) => setEditingExercise({ ...editingExercise, muscle: e.target.value })}
                       className="w-1/3 bg-gray-900 border border-electric text-white rounded px-2 py-1 text-sm focus:outline-none"
-                      placeholder="Muscolo"
                     />
                   </div>
                   <div className="flex gap-2 justify-end">
-                    <button onClick={saveEdit} className="text-electric text-xs font-bold bg-gray-900 px-3 py-1 rounded hover:bg-gray-700">✓ Salva</button>
-                    <button onClick={() => setEditingExercise(null)} className="text-gray-400 text-xs bg-gray-900 px-3 py-1 rounded hover:bg-gray-700">✕ Annulla</button>
+                    <button onClick={saveEdit} className="text-electric text-xs font-bold bg-gray-900 px-3 py-1 rounded">✓ Salva</button>
+                    <button onClick={() => setEditingExercise(null)} className="text-gray-400 text-xs bg-gray-900 px-3 py-1 rounded">✕</button>
                   </div>
                 </div>
               ) : (
-                // Modalità visualizzazione
                 <div className="flex justify-between items-center">
-                  <div 
-                    className="flex-1 cursor-pointer"
-                    onClick={() => onSelectExercise && onSelectExercise(ex)}
-                  >
+                  <div className="flex-1 cursor-pointer" onClick={() => onSelectExercise && onSelectExercise(ex)}>
                     <p className="text-white font-semibold">{ex.name}</p>
                     <p className="text-xs text-electric">{ex.muscle}</p>
                   </div>
                   <div className="flex gap-3">
-                    <button
-                      onClick={() => startEdit(ex)}
-                      className="text-blue-400 hover:text-blue-300 text-sm"
-                      title="Modifica"
-                    >
-                      ✎
-                    </button>
-                    <button
-                      onClick={() => handleDelete(ex.id)}
-                      className="text-red-500 hover:text-red-400 text-sm"
-                      title="Elimina"
-                    >
-                      🗑
-                    </button>
+                    <button onClick={() => startEdit(ex)} className="text-blue-400 hover:text-blue-300 text-sm">✎</button>
+                    <button onClick={() => handleDelete(ex.id)} className="text-red-500 hover:text-red-400 text-sm">🗑</button>
                   </div>
                 </div>
               )}
