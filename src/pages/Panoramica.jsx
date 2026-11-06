@@ -6,30 +6,52 @@ import {
 import { getTargets } from '../utils/userData'
 
 function Panoramica({ user }) {
-  // INIZIALIZZA CON I DATI LOCALI PER EVITARE IL GLITCH
   const [dailyTotals, setDailyTotals] = useState({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   const [targets, setTargets] = useState(getTargets())
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
 
     const loadData = async () => {
       try {
+        console.log('🔵 [Panoramica] Caricamento dati...')
+
         // 1. Carica target da Supabase
         const dbTargets = await loadTargetsDB(user.id)
         if (dbTargets && dbTargets.calories > 0) {
+          console.log('✅ [Panoramica] Target caricati:', dbTargets)
           setTargets(dbTargets)
           localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
+        } else {
+          console.warn('⚠️ [Panoramica] Nessun target trovato su Supabase, uso localStorage')
+          const localTargets = getTargets()
+          setTargets(localTargets)
         }
 
         // 2. Carica diario attivo da Supabase
         const dbLog = await loadActiveDailyLogDB(user.id)
+        console.log('🔵 [Panoramica] Daily log da Supabase:', dbLog)
+        
         if (dbLog && dbLog.is_active && dbLog.entries) {
+          console.log('🔵 [Panoramica] Entries trovati:', dbLog.entries)
+          console.log('🔵 [Panoramica] Numero entries:', dbLog.entries.length)
+          
           const totals = calculateTotals(dbLog.entries)
+          console.log('✅ [Panoramica] Totali calcolati:', totals)
+          
           setDailyTotals(totals)
+        } else {
+          console.warn('⚠️ [Panoramica] Nessun diario attivo trovato')
+          setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
         }
       } catch (err) {
-        console.error('Errore caricamento Panoramica:', err)
+        console.error('❌ [Panoramica] Errore caricamento:', err)
+        setDailyTotals({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+        const localTargets = getTargets()
+        if (localTargets) setTargets(localTargets)
+      } finally {
+        setIsLoading(false)
       }
     }
 
@@ -37,7 +59,16 @@ function Panoramica({ user }) {
   }, [user])
 
   const calculateTotals = (entries) => {
-    return entries.reduce((acc, entry) => {
+    console.log('🔵 [calculateTotals] Entries ricevuti:', entries)
+    
+    if (!entries || entries.length === 0) {
+      console.warn('⚠️ [calculateTotals] Nessun entry da calcolare')
+      return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
+    }
+
+    const totals = entries.reduce((acc, entry) => {
+      console.log('🔵 [calculateTotals] Processing entry:', entry)
+      
       const multiplier = entry.grams / 100
       return {
         calories: acc.calories + (entry.calories * multiplier),
@@ -47,6 +78,9 @@ function Panoramica({ user }) {
         fib: acc.fib + (entry.fib * multiplier),
       }
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+
+    console.log('✅ [calculateTotals] Totali finali:', totals)
+    return totals
   }
 
   const round1 = (val) => Math.round(val * 10) / 10
@@ -54,7 +88,7 @@ function Panoramica({ user }) {
 
   return (
     <div className="p-4 pb-24">
-      <h2 className="text-2xl font-bold text-electric mb-6 mt-2">📊 Panoramica</h2>
+      <h2 className="text-2xl font-bold text-electric mb-6 mt-2"> Panoramica</h2>
 
       <div className="bg-card border border-border rounded-lg p-6 mb-4">
         <h3 className="text-lg font-semibold text-white mb-4">Calorie Oggi</h3>
