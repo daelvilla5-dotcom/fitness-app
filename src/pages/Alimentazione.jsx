@@ -135,24 +135,29 @@ useEffect(() => {
   syncFromSupabase()
 }, [user])
 
-  // Salvataggio automatico in background
-  useEffect(() => {
-    if (user && activeDay && activeDay.isActive && dailyLog.length > 0) {
-      const saveTimer = setTimeout(async () => {
-        try {
-          await saveDailyLogDB(user.id, {
-            start_date: activeDay.startDate,
-            end_date: activeDay.endDate || null,
-            is_active: true,
-            entries: dailyLog
-          })
-        } catch (err) {
-          console.error('Errore salvataggio automatico diario:', err)
-        }
-      }, 1000)
-      return () => clearTimeout(saveTimer)
+  // Salvataggio automatico in background (anche quando il diario è vuoto!)
+useEffect(() => {
+  if (user && activeDay && activeDay.isActive) {
+    const saveTimer = setTimeout(async () => {
+      try {
+        console.log('💾 [Auto-save] Salvataggio diario su Supabase, entries:', dailyLog.length)
+        await saveDailyLogDB(user.id, {
+          start_date: activeDay.startDate,
+          end_date: activeDay.endDate || null,
+          is_active: true,
+          entries: dailyLog
+        })
+        console.log('✅ [Auto-save] Diario salvato su Supabase')
+      } catch (err) {
+        console.error('❌ Errore salvataggio automatico diario:', err)
+      }
+    }, 1000)
+    return () => {
+      console.log('🧹 [Auto-save] Cleanup timeout')
+      clearTimeout(saveTimer)
     }
-  }, [user, activeDay, dailyLog])
+  }
+}, [user, activeDay, dailyLog])
 
   const handleStartNewDay = async () => {
     if (!user) return
