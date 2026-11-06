@@ -308,25 +308,34 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 ))}
               </div>
 
-              {/* Menu a tendina per aggiungere esercizi */}
-              <select
-  onChange={(e) => {
-    const exId = Number(e.target.value)
-    if (exId) {
-      const ex = exercises.find(ex => ex.id === exId)
-      if (ex) {
-        addExerciseToDay(dayIndex, ex)
+              {/* Menu a tendina con bottone Aggiungi */}
+<div className="flex gap-2">
+  <select
+    id={`exercise-select-${dayIndex}`}
+    className="flex-1 bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
+  >
+    <option value="">+ Aggiungi esercizio...</option>
+    {exercises.map(ex => (
+      <option key={ex.id} value={ex.id}>{ex.name}</option>
+    ))}
+  </select>
+  <button
+    onClick={() => {
+      const select = document.getElementById(`exercise-select-${dayIndex}`)
+      const exId = select.value
+      if (exId) {
+        const ex = exercises.find(ex => ex.id === exId)
+        if (ex) {
+          addExerciseToDay(dayIndex, ex)
+          select.value = '' // Reset dopo l'aggiunta
+        }
       }
-    }
-    e.target.value = ''
-  }}
-  className="w-full bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
->
-  <option value="">+ Aggiungi esercizio...</option>
-  {exercises.map(ex => (
-    <option key={ex.id} value={ex.id}>{ex.name}</option>
-  ))}
-</select>
+    }}
+    className="bg-electric text-black font-bold px-4 py-2 rounded-lg text-sm active:scale-95 transition-transform"
+  >
+    +
+  </button>
+</div>
             </div>
           ))}
 
