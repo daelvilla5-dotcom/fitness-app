@@ -310,23 +310,23 @@ function RoutineBuilder({ user, onStartWorkout }) {
 
               {/* Menu a tendina per aggiungere esercizi */}
               <select
-                onChange={(e) => {
-                  const exId = Number(e.target.value)
-                  if (exId) {
-                    const ex = exercises.find(ex => ex.id === exId)
-                    if (ex) {
-                      addExerciseToDay(dayIndex, ex)
-                    }
-                  }
-                  e.target.value = '' // Resetta la select dopo l'aggiunta
-                }}
-                className="w-full bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
-              >
-                <option value="">+ Aggiungi esercizio...</option>
-                {exercises.map(ex => (
-                  <option key={ex.id} value={ex.id}>{ex.name}</option>
-                ))}
-              </select>
+  onChange={(e) => {
+    const exId = Number(e.target.value)
+    if (exId) {
+      const ex = exercises.find(ex => ex.id === exId)
+      if (ex) {
+        addExerciseToDay(dayIndex, ex)
+      }
+    }
+    e.target.value = ''
+  }}
+  className="w-full bg-gray-800 border border-border text-gray-400 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-electric"
+>
+  <option value="">+ Aggiungi esercizio...</option>
+  {exercises.map(ex => (
+    <option key={ex.id} value={ex.id}>{ex.name}</option>
+  ))}
+</select>
             </div>
           ))}
 
