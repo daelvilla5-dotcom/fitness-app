@@ -19,6 +19,7 @@ import {
   saveMeasurement as saveMeasurementDB,
   deleteMeasurement as deleteMeasurementDB,
   saveUserProfile as saveUserProfileDB,
+  loadUserProfile as loadUserProfileDB,
 } from '../utils/supabaseData'
 import { addToQueue } from '../utils/offlineQueue'
 
@@ -37,37 +38,60 @@ function Dati({ user }) {
   const [showMeasurementInput, setShowMeasurementInput] = useState(false)
   const [editingMeasurement, setEditingMeasurement] = useState(null)
 
-  // useEffect per caricare i dati. Ora include 'activeTab' per ricaricare quando cambi scheda!
+  // useEffect principale che carica TUTTI i dati (profilo, pesate, misure) ogni volta che cambi tab
   useEffect(() => {
-    if (user) {
-      const loadFromSupabase = async () => {
-        if (!navigator.onLine) {
-          console.log('📡 Offline: carica dati da localStorage')
-          setWeightLog(getWeightLog() || [])
-          setMeasurements(getMeasurements() || [])
-          return
-        }
-        
-        try {
-          // ONLINE: Supabase è la fonte di verità, ANCHE SE restituisce array vuoto []
-          const dbWeights = await loadWeightLogsDB(user.id)
-          setWeightLog(dbWeights || [])
-          localStorage.setItem('fitness_app_weight_log', JSON.stringify(dbWeights || []))
+    if (!user) return
 
-          const dbMeasurements = await loadMeasurementsDB(user.id)
-          setMeasurements(dbMeasurements || [])
-          localStorage.setItem('fitness_app_measurements', JSON.stringify(dbMeasurements || []))
-          
-        } catch (err) {
-          console.error('Errore caricamento da Supabase:', err)
-          // Solo in caso di ERRORE reale, usa il fallback locale
-          setWeightLog(getWeightLog() || [])
-          setMeasurements(getMeasurements() || [])
-        }
+    const loadAllData = async () => {
+      if (!navigator.onLine) {
+        console.log(' Offline: carica dati da localStorage')
+        const savedProfile = getUserProfile()
+        if (savedProfile) setProfile(savedProfile)
+        setWeightLog(getWeightLog() || [])
+        setMeasurements(getMeasurements() || [])
+        return
       }
-      loadFromSupabase()
+      
+      try {
+        // 1. CARICA PROFILO DA SUPABASE (sempre, anche se array vuoto)
+        const dbProfile = await loadUserProfileDB(user.id)
+        if (dbProfile) {
+          const p = { 
+            genere: dbProfile.genere || 'M', 
+            eta: dbProfile.eta, 
+            altezza: dbProfile.altezza,
+            dataNascita: dbProfile.data_nascita
+          }
+          setProfile(p)
+          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
+        } else {
+          // Fallback al locale se non c'è su Supabase
+          const localProfile = getUserProfile()
+          if (localProfile) setProfile(localProfile)
+        }
+
+        // 2. CARICA PESATE DA SUPABASE
+        const dbWeights = await loadWeightLogsDB(user.id)
+        setWeightLog(dbWeights || [])
+        localStorage.setItem('fitness_app_weight_log', JSON.stringify(dbWeights || []))
+
+        // 3. CARICA MISURE DA SUPABASE
+        const dbMeasurements = await loadMeasurementsDB(user.id)
+        setMeasurements(dbMeasurements || [])
+        localStorage.setItem('fitness_app_measurements', JSON.stringify(dbMeasurements || []))
+        
+      } catch (err) {
+        console.error('Errore caricamento da Supabase:', err)
+        // Solo in caso di errore reale, usa il fallback locale
+        const localProfile = getUserProfile()
+        if (localProfile) setProfile(localProfile)
+        setWeightLog(getWeightLog() || [])
+        setMeasurements(getMeasurements() || [])
+      }
     }
-  }, [user, activeTab]) // ← AGGIUNTO activeTab: ricarica i dati ogni volta che cambi tab!
+
+    loadAllData()
+  }, [user, activeTab]) // ← RICARICA ogni volta che cambi tab!
 
   const averageWeight = (() => {
     if (!weightLog || weightLog.length === 0) return null
@@ -278,7 +302,7 @@ function Dati({ user }) {
     { id: 'peso', label: 'Peso', icon: '⚖️' },
     { id: 'misure', label: 'Misure', icon: '📏' },
     { id: 'backup', label: 'Backup', icon: '💾' },
-    { id: 'account', label: 'Account', icon: '👤' },
+    { id: 'account', label: 'Account', icon: '' },
   ]
 
   const areaLabels = {
@@ -320,12 +344,12 @@ function Dati({ user }) {
             </div>
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Data di nascita</label>
-              <input type="date" value={profile.dataNascita} onChange={(e) => setProfile({ ...profile, dataNascita: e.target.value })} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" />
+              <input type="date" value={profile.dataNascita || ''} onChange={(e) => setProfile({ ...profile, dataNascita: e.target.value })} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" />
               {profile.dataNascita && <p className="text-sm text-electric mt-1">Età: {calculateAge(profile.dataNascita)} anni</p>}
             </div>
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Altezza (cm)</label>
-              <input type="number" value={profile.altezza} onChange={(e) => setProfile({ ...profile, altezza: e.target.value })} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" placeholder="175" />
+              <input type="number" value={profile.altezza || ''} onChange={(e) => setProfile({ ...profile, altezza: e.target.value })} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" placeholder="175" />
             </div>
             <button onClick={handleSaveProfile} className="w-full bg-electric text-black font-bold py-3 rounded-lg mt-4 active:scale-95 transition-transform">Salva Profilo</button>
           </div>
@@ -382,7 +406,7 @@ function Dati({ user }) {
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Sagoma</h3>
             <div className="flex gap-2 mb-4">
-              <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>♂️ Maschio</button>
+              <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>️ Maschio</button>
               <button onClick={() => setProfile({ ...profile, genere: 'F' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'F' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>♀️ Femmina</button>
             </div>
             <BodyFigure gender={profile.genere} onSelectArea={handleSelectArea} selectedArea={selectedArea} />
