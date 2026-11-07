@@ -7,14 +7,8 @@ const ACTIVE_DAY_KEY = 'fitness_app_active_day'
 // Helper per arrotondare a 1 decimale
 const round1 = (val) => Math.round(val * 10) / 10
 
-// Alimenti di esempio pre-caricati
-const defaultFoods = [
-  { id: 1, name: 'Petto di Pollo', calories: 165, pro: 31, carb: 0, gra: 3.6, fib: 0, portion: 100, portionUnit: 'g' },
-  { id: 2, name: 'Riso Bianco', calories: 130, pro: 2.7, carb: 28, gra: 0.3, fib: 0.4, portion: 100, portionUnit: 'g' },
-  { id: 3, name: 'Uova Intere', calories: 155, pro: 13, carb: 1.1, gra: 11, fib: 0, portion: 100, portionUnit: 'g' },
-  { id: 4, name: 'Avena', calories: 389, pro: 16.9, carb: 66, gra: 6.9, fib: 10.6, portion: 100, portionUnit: 'g' },
-  { id: 5, name: 'Banana', calories: 89, pro: 1.1, carb: 23, gra: 0.3, fib: 2.6, portion: 100, portionUnit: 'g' },
-]
+// ✅ NESSUN alimento di default: l'utente parte da zero e aggiunge i suoi
+const defaultFoods = []
 
 export function getFoods() {
   const stored = localStorage.getItem(FOODS_KEY)
@@ -161,7 +155,6 @@ export function removeFromDailyLog(entryId) {
   return log
 }
 
-// FIX: arrotonda anche i totali finali
 export function getDailyTotals() {
   const log = getTodayLog()
   const totals = log.reduce((acc, entry) => ({
@@ -172,7 +165,6 @@ export function getDailyTotals() {
     fib: acc.fib + entry.fib,
   }), { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   
-  // Arrotonda i totali a 1 decimale
   return {
     calories: Math.round(totals.calories),
     pro: round1(totals.pro),
@@ -182,7 +174,6 @@ export function getDailyTotals() {
   }
 }
 
-// --- STORICO GIORNALIERO ---
 export function getDailyHistory() {
   const history = []
   
