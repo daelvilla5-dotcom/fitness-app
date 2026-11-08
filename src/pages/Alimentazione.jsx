@@ -36,7 +36,6 @@ function Alimentazione({ user }) {
   const [editingFood, setEditingFood] = useState(null)
   const [editingGrams, setEditingGrams] = useState(null)
 
-  // 🚀 INIZIALIZZAZIONE ISTANTANEA DA LOCALSTORAGE (Niente più glitch a zero!)
   const [foods, setFoods] = useState(() => {
     const saved = localStorage.getItem('fitness_app_foods')
     return saved ? JSON.parse(saved) : getFoods()
@@ -62,7 +61,9 @@ function Alimentazione({ user }) {
   
   const [attivita, setAttivita] = useState('moderata')
   const [obiettivo, setObiettivo] = useState('mantenimento')
-  const [multipliers, setMultipliers] = useState({ pro: 1.6, gra: 0.9, fib: 30 })
+  
+  // ✅ CAMPI VUOTI DI DEFAULT (nessun numero preimpostato)
+  const [multipliers, setMultipliers] = useState({ pro: '', gra: '', fib: '' })
 
   const calculateTotals = (log) => {
     return log.reduce((acc, entry) => {
@@ -79,85 +80,68 @@ function Alimentazione({ user }) {
 
   const [dailyTotals, setDailyTotals] = useState(() => calculateTotals(dailyLog))
 
-  // Aggiorna i totali quando il log cambia
   useEffect(() => {
     setDailyTotals(calculateTotals(dailyLog))
     localStorage.setItem('fitness_app_daily_log', JSON.stringify(dailyLog))
   }, [dailyLog])
 
-  // Caricamento silenzioso da Supabase (SOVRASCRIVE sempre i dati locali quando online)
-useEffect(() => {
-  if (!user) return
+  useEffect(() => {
+    if (!user) return
 
-  const syncFromSupabase = async () => {
-    try {
-      console.log('🔄 [Alimentazione] Inizio sincronizzazione da Supabase...')
-      
-      const dbProfile = await loadUserProfileDB(user.id)
-      if (dbProfile) {
-        const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
-        setProfile(p)
-        localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
-      }
-
-      const avgWeight = getAverageWeight()
-      if (avgWeight) setAverageWeight(avgWeight)
-
-      // CARICA SEMPRE IL DIARIO DA SUPABASE (anche se vuoto)
-      const dbLog = await loadActiveDailyLogDB(user.id)
-      console.log('📋 [Alimentazione] Diario da Supabase:', dbLog)
-      
-      if (dbLog && dbLog.is_active) {
-        console.log('✅ [Alimentazione] Diario attivo trovato, entries:', dbLog.entries?.length || 0)
-        setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
-        setDailyLog(dbLog.entries || [])
-        localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries || []))
-      } else {
-        console.warn('⚠️ [Alimentazione] Nessun diario attivo su Supabase')
-      }
-
-      const dbTargets = await loadTargetsDB(user.id)
-      if (dbTargets && dbTargets.calories > 0) {
-        setTargets(dbTargets)
-        localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
-      }
-
-      const supabaseFoods = await loadFoodsDB(user.id)
-      if (supabaseFoods.length > 0) {
-        setFoods(supabaseFoods)
-        localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
-      }
-    } catch (err) {
-      console.error('❌ Errore sincronizzazione:', err)
-    }
-  }
-
-  syncFromSupabase()
-}, [user])
-
-  // Salvataggio automatico in background (anche quando il diario è vuoto!)
-useEffect(() => {
-  if (user && activeDay && activeDay.isActive) {
-    const saveTimer = setTimeout(async () => {
+    const syncFromSupabase = async () => {
       try {
-        console.log('💾 [Auto-save] Salvataggio diario su Supabase, entries:', dailyLog.length)
-        await saveDailyLogDB(user.id, {
-          start_date: activeDay.startDate,
-          end_date: activeDay.endDate || null,
-          is_active: true,
-          entries: dailyLog
-        })
-        console.log('✅ [Auto-save] Diario salvato su Supabase')
+        const dbProfile = await loadUserProfileDB(user.id)
+        if (dbProfile) {
+          const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
+          setProfile(p)
+          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
+        }
+
+        const avgWeight = getAverageWeight()
+        if (avgWeight) setAverageWeight(avgWeight)
+
+        const dbLog = await loadActiveDailyLogDB(user.id)
+        if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
+          setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
+          setDailyLog(dbLog.entries)
+        }
+
+        const dbTargets = await loadTargetsDB(user.id)
+        if (dbTargets && dbTargets.calories > 0) {
+          setTargets(dbTargets)
+          localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
+        }
+
+        const supabaseFoods = await loadFoodsDB(user.id)
+        if (supabaseFoods.length > 0) {
+          setFoods(supabaseFoods)
+          localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
+        }
       } catch (err) {
-        console.error('❌ Errore salvataggio automatico diario:', err)
+        console.error('Errore sincronizzazione silenziosa:', err)
       }
-    }, 1000)
-    return () => {
-      console.log('🧹 [Auto-save] Cleanup timeout')
-      clearTimeout(saveTimer)
     }
-  }
-}, [user, activeDay, dailyLog])
+
+    syncFromSupabase()
+  }, [user])
+
+  useEffect(() => {
+    if (user && activeDay && activeDay.isActive) {
+      const saveTimer = setTimeout(async () => {
+        try {
+          await saveDailyLogDB(user.id, {
+            start_date: activeDay.startDate,
+            end_date: activeDay.endDate || null,
+            is_active: true,
+            entries: dailyLog
+          })
+        } catch (err) {
+          console.error('Errore salvataggio automatico diario:', err)
+        }
+      }, 1000)
+      return () => clearTimeout(saveTimer)
+    }
+  }, [user, activeDay, dailyLog])
 
   const handleStartNewDay = async () => {
     if (!user) return
@@ -188,6 +172,12 @@ useEffect(() => {
 
     const { eta, altezza, genere } = profile
     const peso = averageWeight
+    
+    // ✅ Parsing sicuro: se il campo è vuoto, usa 0
+    const proVal = parseFloat(multipliers.pro) || 0
+    const graVal = parseFloat(multipliers.gra) || 0
+    const fibVal = parseFloat(multipliers.fib) || 0
+
     let bmr = genere === 'M' ? (10 * peso + 6.25 * altezza - 5 * eta + 5) : (10 * peso + 6.25 * altezza - 5 * eta - 161)
     const fattori = { sedentaria: 1.2, leggera: 1.375, moderata: 1.55, intensa: 1.725, moltoIntensa: 1.9 }
     let tdee = bmr * (fattori[attivita] || 1.55)
@@ -197,14 +187,13 @@ useEffect(() => {
     else if (obiettivo === 'ricomposizione') tdee -= 200
 
     const calorieTotali = Math.round(tdee)
-    const proteine = Math.ceil(multipliers.pro * peso)
-    const grassi = Math.ceil(multipliers.gra * peso)
-    const fibre = multipliers.fib
+    const proteine = Math.ceil(proVal * peso)
+    const grassi = Math.ceil(graVal * peso)
+    const fibre = Math.ceil(fibVal)
     const carboidrati = Math.max(0, Math.round((calorieTotali - (proteine * 4) - (grassi * 9) - (fibre * 2)) / 4))
 
     const newTargets = { calories: calorieTotali, pro: proteine, gra: grassi, carb: carboidrati, fib: fibre }
 
-    // Aggiorna ISTANTANEAMENTE (Niente glitch)
     setTargets(newTargets)
     localStorage.setItem('fitness_app_targets', JSON.stringify(newTargets))
     
@@ -221,14 +210,20 @@ useEffect(() => {
 
   const applyPreset = (presetName) => {
     const presets = getPresets()
-    setMultipliers(presets[presetName])
+    setMultipliers(presets[presetName] || { pro: '', gra: '', fib: '' })
     setObiettivo(presetName)
   }
 
+  // ✅ FUNZIONE FIXATA PER iOS: accetta virgola, punto e campo vuoto senza resettare
   const handleMultiplierChange = (field, value) => {
-    const newMultipliers = { ...multipliers, [field]: Number(value) }
-    setMultipliers(newMultipliers)
-    updatePreset(obiettivo, newMultipliers)
+    const cleanValue = value.replace(',', '.') // Trasforma virgola in punto
+    
+    // Regex: permette stringa vuota, o numeri con opzionale punto decimale (es. "1", "1.", "1.6")
+    if (cleanValue === '' || /^\d*\.?\d*$/.test(cleanValue)) {
+      const newMultipliers = { ...multipliers, [field]: cleanValue }
+      setMultipliers(newMultipliers)
+      updatePreset(obiettivo, newMultipliers)
+    }
   }
 
   const handleSaveFood = async (foodData) => {
@@ -252,56 +247,19 @@ useEffect(() => {
   }
 
   const handleAddToDailyLog = (food, grams) => {
-  if (!activeDay || !activeDay.isActive) { 
-    alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
-    return 
+    if (!activeDay || !activeDay.isActive) { alert('Inizia un nuovo giorno prima di aggiungere alimenti!'); return }
+    setDailyLog(addToDailyLog(food, grams))
   }
-  
-  const newEntry = {
-    id: Date.now(),
-    name: food.name,
-    calories: food.calories || 0,
-    pro: food.pro || 0,
-    carb: food.carb || 0,
-    gra: food.gra || 0,
-    fib: food.fib || 0,
-    grams: grams
-  }
-  
-  const newLog = [...dailyLog, newEntry]
-  setDailyLog(newLog)
-  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
-}
 
   const handleRemoveFromDailyLog = (entryId) => {
-  console.log('🗑 Rimozione entry:', entryId)
-  console.log('📋 Log prima:', dailyLog)
-  
-  const newLog = dailyLog.filter(entry => entry.id !== entryId)
-  
-  console.log('📋 Log dopo:', newLog)
-  console.log('🔢 Entries rimaste:', newLog.length)
-  
-  setDailyLog(newLog)
-  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
-}
+    setDailyLog(removeFromDailyLog(entryId))
+  }
 
   const handleUpdateGrams = (entryId, newGrams) => {
-  if (newGrams <= 0) {
-    alert('Inserisci una quantità valida!')
-    return
+    if (newGrams <= 0) { alert('Inserisci una quantità valida!'); return }
+    setDailyLog(updateFoodGrams(entryId, newGrams))
+    setEditingGrams(null)
   }
-  
-  console.log('✏️ Aggiornamento grammi:', entryId, '→', newGrams)
-  
-  const newLog = dailyLog.map(entry => 
-    entry.id === entryId ? { ...entry, grams: newGrams } : entry
-  )
-  
-  setDailyLog(newLog)
-  localStorage.setItem('fitness_app_daily_log', JSON.stringify(newLog))
-  setEditingGrams(null)
-}
 
   const formatDate = (dateStr) => new Date(dateStr).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   const round1 = (val) => Math.round(val * 10) / 10
@@ -424,16 +382,41 @@ useEffect(() => {
               
               <div className="space-y-3 pt-2 border-t border-border">
                 <div>
-                  <label className="text-xs text-gray-400">Proteine: {multipliers.pro} g/kg → {Math.ceil(multipliers.pro * (averageWeight || 0))}g</label>
-                  <input type="number" step="0.1" value={multipliers.pro} onChange={(e) => handleMultiplierChange('pro', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 mt-1" />
+                  <label className="text-xs text-gray-400 mb-1 block">
+                    Proteine: {multipliers.pro || '0'} g/kg → {Math.ceil((parseFloat(multipliers.pro) || 0) * (averageWeight || 0))}g
+                  </label>
+                  <input 
+                    type="text" 
+                    inputMode="decimal" 
+                    value={multipliers.pro} 
+                    onChange={(e) => handleMultiplierChange('pro', e.target.value)} 
+                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
+                    placeholder="es. 1.6"
+                  />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400">Grassi: {multipliers.gra} g/kg → {Math.ceil(multipliers.gra * (averageWeight || 0))}g</label>
-                  <input type="number" step="0.1" value={multipliers.gra} onChange={(e) => handleMultiplierChange('gra', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 mt-1" />
+                  <label className="text-xs text-gray-400 mb-1 block">
+                    Grassi: {multipliers.gra || '0'} g/kg → {Math.ceil((parseFloat(multipliers.gra) || 0) * (averageWeight || 0))}g
+                  </label>
+                  <input 
+                    type="text" 
+                    inputMode="decimal" 
+                    value={multipliers.gra} 
+                    onChange={(e) => handleMultiplierChange('gra', e.target.value)} 
+                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
+                    placeholder="es. 0.9"
+                  />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400">Fibre (g fissi)</label>
-                  <input type="number" value={multipliers.fib} onChange={(e) => handleMultiplierChange('fib', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 mt-1" />
+                  <label className="text-xs text-gray-400 mb-1 block">Fibre (g fissi)</label>
+                  <input 
+                    type="text" 
+                    inputMode="decimal" 
+                    value={multipliers.fib} 
+                    onChange={(e) => handleMultiplierChange('fib', e.target.value)} 
+                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
+                    placeholder="es. 30"
+                  />
                 </div>
               </div>
 
