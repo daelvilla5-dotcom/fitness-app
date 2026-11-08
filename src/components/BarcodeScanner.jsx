@@ -12,7 +12,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
 
   useEffect(() => {
     return () => {
-      // Cleanup robusto allo smontaggio del componente
       const scanner = html5QrCodeRef.current
       if (scanner) {
         scanner.stop().catch(() => {}).finally(() => {
@@ -29,35 +28,18 @@ function BarcodeScanner({ onProductFound, onClose }) {
     setFoundProduct(null)
 
     try {
-      // Richiedi permessi espliciti
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } 
-      })
-      stream.getTracks().forEach(track => track.stop())
-
       const html5QrCode = new Html5Qrcode("barcode-reader")
       html5QrCodeRef.current = html5QrCode
 
-      const devices = await Html5Qrcode.getCameras()
-      
-      if (!devices || devices.length === 0) {
-        setError('Nessuna fotocamera trovata.')
-        setMode('choice')
-        return
-      }
-
-      const rearCamera = devices.find(d => 
-        d.label.toLowerCase().includes('back') || 
-        d.label.toLowerCase().includes('rear') ||
-        d.label.toLowerCase().includes('environment')
-      ) || devices[devices.length - 1]
-
+      // ✅ FIX IPHONE: Usa facingMode invece di cercare l'ID del dispositivo.
+      // iOS Safari gestisce molto meglio i vincoli "environment" direttamente.
       await html5QrCode.start(
-        rearCamera.id,
+        { facingMode: "environment" },
         {
           fps: 10,
-          qrbox: { width: 280, height: 150 },
-          aspectRatio: 1.5,
+          qrbox: { width: 250, height: 250 }, // ✅ Quadrato più affidabile su schermi piccoli (iPhone 13 mini)
+          aspectRatio: 1.0,
+          disableFlip: false,
         },
         onScanSuccess,
         () => {} // Ignora errori di scansione continua
@@ -67,10 +49,10 @@ function BarcodeScanner({ onProductFound, onClose }) {
       let msg = 'Errore nell\'accesso alla fotocamera.'
       
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Permesso fotocamera negato.\n\nPer abilitarlo:\n• Android: Impostazioni → App → Browser → Permessi → Fotocamera\n• Chrome: clicca l\'icona 🔒 nella barra indirizzi'
-      } else if (err.name === 'NotFoundError') {
-        msg = 'Nessuna fotocamera trovata sul dispositivo.'
-      } else if (err.name === 'NotReadableError') {
+        msg = 'Permesso fotocamera negato.\n\nSu iPhone: Impostazioni → Safari → Fotocamera → Consenti'
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'Nessuna fotocamera trovata.'
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
         msg = 'Fotocamera occupata da un\'altra app. Chiudila e riprova.'
       }
       
@@ -79,14 +61,12 @@ function BarcodeScanner({ onProductFound, onClose }) {
     }
   }
 
-  // FIX: Gestione robusta dello stop per evitare l'errore "not running"
   const stopCamera = async () => {
     const scanner = html5QrCodeRef.current
     if (scanner) {
       try {
         await scanner.stop()
       } catch (err) {
-        // Silenzia l'errore se lo scanner è già fermo
         if (!err.message?.toLowerCase().includes('not running') && 
             !err.message?.toLowerCase().includes('not paused')) {
           console.warn('Errore stop scanner:', err)
@@ -101,7 +81,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
   }
 
   const onScanSuccess = async (decodedText) => {
-    // FIX: Evita scansioni multiple simultanee
     if (searching) return
     
     setLastScannedCode(decodedText)
@@ -174,7 +153,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
           fib: nutriments.fiber_100g || 0,
         }
 
-        // Ferma la fotocamera in modo sicuro
         await stopCamera()
         setSearching(false)
         setFoundProduct(nutritionData)
@@ -192,7 +170,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
       if (err.name === 'AbortError') {
         msg = 'Timeout: la richiesta ha impiegato troppo tempo.'
       } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        msg = 'Errore di rete. Controlla connessione internet.'
+        msg = 'Errore di rete. Controlla la connessione internet.'
       } else {
         msg = `Errore: ${err.message}`
       }
@@ -245,7 +223,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
         </div>
 
         <div className="space-y-4">
-          {/* Scelta modalità */}
           {mode === 'choice' && !searching && !foundProduct && (
             <>
               <div className="bg-gray-900 rounded-lg p-6 text-center border border-border">
@@ -292,7 +269,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </>
           )}
 
-          {/* Fotocamera attiva con overlay ricerca */}
           {mode === 'camera' && (
             <div className="space-y-3">
               <div className="bg-gray-900 rounded-lg overflow-hidden border border-border relative">
@@ -326,7 +302,6 @@ function BarcodeScanner({ onProductFound, onClose }) {
             </div>
           )}
 
-          {/* Prodotto trovato */}
           {foundProduct && (
             <div className="bg-green-500/10 border border-green-500 rounded-lg p-4">
               <p className="text-green-400 font-semibold mb-3 text-center">✅ Prodotto trovato!</p>
