@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'
 
 function BarcodeScanner({ onProductFound, onClose }) {
   const [mode, setMode] = useState('choice')
@@ -9,6 +9,17 @@ function BarcodeScanner({ onProductFound, onClose }) {
   const [foundProduct, setFoundProduct] = useState(null)
   const html5QrCodeRef = useRef(null)
   const fileInputRef = useRef(null)
+
+  // ✅ FORMATI SUPPORTATI: Fondamentale per i codici a barre dei prodotti alimentari
+  const formatsToSupport = [
+    Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8,
+    Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E,
+    Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39,
+    Html5QrcodeSupportedFormats.QR_CODE // Fallback
+  ]
 
   useEffect(() => {
     return () => {
@@ -31,18 +42,22 @@ function BarcodeScanner({ onProductFound, onClose }) {
       const html5QrCode = new Html5Qrcode("barcode-reader")
       html5QrCodeRef.current = html5QrCode
 
-      // ✅ FIX IPHONE: Usa facingMode invece di cercare l'ID del dispositivo.
-      // iOS Safari gestisce molto meglio i vincoli "environment" direttamente.
+      // ✅ FIX IPHONE: Richiedi risoluzione più alta e forza i formati 1D
       await html5QrCode.start(
-        { facingMode: "environment" },
+        { 
+          facingMode: "environment",
+          width: { ideal: 1280 }, // Risoluzione più alta per una migliore messa a fuoco
+          height: { ideal: 720 }
+        },
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 }, // ✅ Quadrato più affidabile su schermi piccoli (iPhone 13 mini)
-          aspectRatio: 1.0,
+          qrbox: { width: 280, height: 150 }, // Rettangolare, meglio per codici a barre
+          aspectRatio: 1.77,
+          formatsToSupport: formatsToSupport, // ← FONDAMENTALE
           disableFlip: false,
         },
         onScanSuccess,
-        () => {} // Ignora errori di scansione continua
+        () => {} // Silenzia errori di scansione continua
       )
     } catch (err) {
       console.error('Errore fotocamera:', err)
@@ -53,7 +68,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         msg = 'Nessuna fotocamera trovata.'
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        msg = 'Fotocamera occupata da un\'altra app. Chiudila e riprova.'
+        msg = 'Fotocamera occupata. Chiudi altre app e riprova.'
       }
       
       setError(msg)
@@ -100,18 +115,22 @@ function BarcodeScanner({ onProductFound, onClose }) {
 
     try {
       const html5QrCode = new Html5Qrcode("barcode-reader-hidden")
-      const decodedText = await html5QrCode.scanFile(file, true)
+      
+      // ✅ Anche per le foto, forza i formati corretti
+      const decodedText = await html5QrCode.scanFile(file, true, {
+        formatsToSupport: formatsToSupport
+      })
       
       if (decodedText) {
         setLastScannedCode(decodedText)
         await lookupProduct(decodedText)
       } else {
-        setError('Nessun codice a barre trovato nell\'immagine.\nProva con un\'immagine più nitida.')
+        setError('Nessun codice a barre trovato.\nAssicurati che sia ben illuminato e a fuoco.')
         setSearching(false)
       }
     } catch (err) {
       console.error('Errore scan file:', err)
-      setError('Impossibile leggere il codice a barre dall\'immagine.')
+      setError('Impossibile leggere il codice. Prova con una foto più nitida o usa la fotocamera live.')
       setSearching(false)
     }
     
@@ -158,7 +177,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
         setFoundProduct(nutritionData)
       } else {
         await stopCamera()
-        setError(`Codice: ${barcode}\nProdotto non trovato nel database OpenFoodFacts.`)
+        setError(`Codice: ${barcode}\nProdotto non trovato nel database OpenFoodFacts.\nProva l'inserimento manuale.`)
         setSearching(false)
         setMode('choice')
       }
@@ -264,7 +283,7 @@ function BarcodeScanner({ onProductFound, onClose }) {
               </div>
 
               <p className="text-xs text-gray-500 text-center">
-                💡 I dati verranno presi dal database OpenFoodFacts
+                💡 Consiglio: Assicurati che il codice sia ben illuminato e piatto.
               </p>
             </>
           )}
@@ -292,12 +311,17 @@ function BarcodeScanner({ onProductFound, onClose }) {
               </div>
               
               {!searching && !foundProduct && (
-                <button
-                  onClick={handleBackToChoice}
-                  className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
-                >
-                  ✕ Torna alla scelta
-                </button>
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-400 text-center">
+                    💡 Avvicina il telefono al codice e assicurati che ci sia buona luce.
+                  </p>
+                  <button
+                    onClick={handleBackToChoice}
+                    className="w-full bg-gray-800 border border-border text-white py-2 rounded-lg"
+                  >
+                    ✕ Torna alla scelta
+                  </button>
+                </div>
               )}
             </div>
           )}
