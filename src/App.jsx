@@ -10,17 +10,14 @@ import Dati from './pages/Dati'
 import { migrateLocalStorageToSupabase } from './utils/migrateData'
 import ConnectionStatus from './components/ConnectionStatus'
 import { syncPendingOperations } from './utils/syncService'
-import { getRoutineByShareCode, saveRoutine } from './utils/supabaseData'
+import { loadUserProfile as loadUserProfileDB } from './utils/supabaseData'
 
 const APPROVED_USER_KEY = 'fitness_app_approved_user'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  
-  // Stati per la condivisione/importazione
-  const [importData, setImportData] = useState(null)
-  const [importLoading, setImportLoading] = useState(false)
+  const [dataLoading, setDataLoading] = useState(true)
 
   useEffect(() => {
     let isMounted = true
@@ -29,18 +26,21 @@ function App() {
       const { data: { session } } = await supabase.auth.getSession()
       
       if (!navigator.onLine) {
-        console.log(' Offline: controllo fallback locale')
+        console.log('📡 Offline: controllo fallback locale')
         const savedUser = localStorage.getItem(APPROVED_USER_KEY)
         if (savedUser) {
           try {
             const parsed = JSON.parse(savedUser)
             console.log('✅ Utente ripristinato da localStorage:', parsed.email)
-            if (isMounted) setUser(parsed)
+            if (isMounted) {
+              setUser(parsed)
+              setLoading(false)
+            }
           } catch (e) {
             console.error('Errore parsing utente salvato:', e)
           }
         } else {
-          console.log('️ Nessun utente salvato in locale, serve login online')
+          console.log('⚠️ Nessun utente salvato in locale, serve login online')
         }
         if (isMounted) setLoading(false)
         return
@@ -153,57 +153,46 @@ function App() {
     }
   }, [])
 
-  // useEffect per gestire l'importazione da link condiviso (senza useSearchParams)
+  // ✅ NUOVO useEffect: Carica i dati utente da Supabase OGNI VOLTA che l'app si avvia
   useEffect(() => {
-    const checkImportCode = () => {
-      const params = new URLSearchParams(window.location.search)
-      const shareCode = params.get('importa')
+    if (!user) {
+      setDataLoading(false)
+      return
+    }
+
+    const loadUserData = async () => {
+      console.log('🔄 Caricamento dati utente da Supabase...')
+      setDataLoading(true)
       
-      if (shareCode && user && !importData) {
-        setImportLoading(true)
-        getRoutineByShareCode(shareCode).then(routine => {
-          if (routine) {
-            setImportData(routine)
-          } else {
-            alert('Scheda non trovata o non più condivisa.')
-            // Pulisci URL
-            window.history.replaceState({}, '', window.location.pathname)
+      try {
+        // Forza il caricamento del profilo da Supabase
+        const dbProfile = await loadUserProfileDB(user.id)
+        if (dbProfile) {
+          console.log('✅ Profilo caricato da Supabase:', dbProfile)
+          const p = { 
+            genere: dbProfile.genere || 'M', 
+            eta: dbProfile.eta, 
+            altezza: dbProfile.altezza,
+            dataNascita: dbProfile.data_nascita
           }
-          setImportLoading(false)
-        }).catch(() => {
-          setImportLoading(false)
-        })
+          localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
+        } else {
+          console.warn('⚠️ Profilo non trovato su Supabase')
+        }
+      } catch (err) {
+        console.error('❌ Errore caricamento dati utente:', err)
+      } finally {
+        setDataLoading(false)
       }
     }
 
-    checkImportCode()
-  }, [user, importData])
-
-  const handleImportRoutine = async () => {
-    if (!importData || !user) return
-    setImportLoading(true)
-    try {
-      const newRoutine = {
-        name: `${importData.name} (Importata)`,
-        days: importData.days
-      }
-      await saveRoutine(user.id, newRoutine)
-      alert('✅ Scheda importata con successo! La trovi nella tab "Schede".')
-      setImportData(null)
-      // Pulisci URL
-      window.history.replaceState({}, '', window.location.pathname)
-    } catch (err) {
-      console.error('Errore importazione:', err)
-      alert('Errore durante l\'importazione della scheda.')
-    } finally {
-      setImportLoading(false)
-    }
-  }
+    loadUserData()
+  }, [user])
 
   if (loading) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
-        <div className="text-electric text-xl">Caricamento...</div>
+        <div className="text-electric text-xl animate-pulse">Caricamento...</div>
       </div>
     )
   }
@@ -223,41 +212,19 @@ function App() {
         
         <ConnectionStatus />
 
-        {/* Modal Importazione Scheda */}
-        {importData && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-card border border-electric rounded-lg p-6 max-w-md w-full">
-              <h3 className="text-lg font-bold text-electric mb-2">📥 Importa Scheda</h3>
-              <p className="text-white mb-1">È stata condivisa con te la scheda:</p>
-              <p className="text-xl font-bold text-white mb-4">"{importData.name}"</p>
-              <p className="text-sm text-gray-400 mb-6">
-                Verrà creata una copia nel tuo account. Potrai modificarla come preferisci.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleImportRoutine}
-                  disabled={importLoading}
-                  className="flex-1 bg-electric text-black font-bold py-3 rounded-lg disabled:opacity-50"
-                >
-                  {importLoading ? 'Importazione...' : 'Importa Scheda'}
-                </button>
-                <button
-                  onClick={() => {
-                    setImportData(null)
-                    window.history.replaceState({}, '', window.location.pathname)
-                  }}
-                  className="flex-1 bg-gray-700 text-white font-bold py-3 rounded-lg"
-                >
-                  Annulla
-                </button>
-              </div>
+        {/* Mostra loading mentre carica i dati utente */}
+        {dataLoading && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+            <div className="bg-card border border-electric rounded-lg p-6 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-electric mx-auto mb-4"></div>
+              <p className="text-electric font-semibold">Caricamento dati...</p>
             </div>
           </div>
         )}
 
         <main>
           <Routes>
-            <Route path="/" element={<Panoramica />} />
+            <Route path="/" element={<Panoramica user={user} />} />
             <Route path="/alimentazione" element={<Alimentazione user={user} />} />
             <Route path="/allenamento" element={<Allenamento user={user} />} />
             <Route path="/dati" element={<Dati user={user} />} />
