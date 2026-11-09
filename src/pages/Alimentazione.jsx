@@ -63,31 +63,41 @@ function Alimentazione({ user }) {
   const [obiettivo, setObiettivo] = useState('mantenimento')
   const [multipliers, setMultipliers] = useState({ pro: '', gra: '', fib: '' })
 
+  // ✅ FIX: calculateTotals gestisce correttamente grams undefined/0
   const calculateTotals = (log) => {
+    if (!log || log.length === 0) {
+      return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
+    }
+    
     return log.reduce((acc, entry) => {
-      const multiplier = entry.grams / 100
+      const grams = entry.grams || 0
+      const multiplier = grams / 100
+      
       return {
-        calories: acc.calories + (entry.calories * multiplier),
-        pro: acc.pro + (entry.pro * multiplier),
-        carb: acc.carb + (entry.carb * multiplier),
-        gra: acc.gra + (entry.gra * multiplier),
-        fib: acc.fib + (entry.fib * multiplier),
+        calories: acc.calories + ((entry.calories || 0) * multiplier),
+        pro: acc.pro + ((entry.pro || 0) * multiplier),
+        carb: acc.carb + ((entry.carb || 0) * multiplier),
+        gra: acc.gra + ((entry.gra || 0) * multiplier),
+        fib: acc.fib + ((entry.fib || 0) * multiplier),
       }
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
 
   const [dailyTotals, setDailyTotals] = useState(() => calculateTotals(dailyLog))
 
+  // ✅ FIX: Ricalcola i totali quando dailyLog cambia
   useEffect(() => {
     setDailyTotals(calculateTotals(dailyLog))
-    localStorage.setItem('fitness_app_daily_log', JSON.stringify(dailyLog))
   }, [dailyLog])
 
+  // ✅ FIX: Sincronizzazione da Supabase con dipendenza su activeTab
   useEffect(() => {
     if (!user) return
 
     const syncFromSupabase = async () => {
       try {
+        console.log('🔄 [Alimentazione] Sincronizzazione da Supabase...')
+        
         const dbProfile = await loadUserProfileDB(user.id)
         if (dbProfile) {
           const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
@@ -98,12 +108,16 @@ function Alimentazione({ user }) {
         const avgWeight = getAverageWeight()
         if (avgWeight) setAverageWeight(avgWeight)
 
-        // ✅ FIX: Rimosso il controllo "length > 0". Un giorno è attivo anche se ha 0 alimenti!
         const dbLog = await loadActiveDailyLogDB(user.id)
+        console.log('📋 [Alimentazione] Daily log da Supabase:', dbLog)
+        
         if (dbLog && dbLog.is_active) {
+          console.log('✅ [Alimentazione] Diario attivo trovato, entries:', dbLog.entries?.length || 0)
           setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
           setDailyLog(dbLog.entries || [])
           localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries || []))
+        } else {
+          console.warn('⚠️ [Alimentazione] Nessun diario attivo su Supabase')
         }
 
         const dbTargets = await loadTargetsDB(user.id)
@@ -118,27 +132,30 @@ function Alimentazione({ user }) {
           localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
         }
       } catch (err) {
-        console.error('Errore sincronizzazione silenziosa:', err)
+        console.error('❌ Errore sincronizzazione:', err)
       }
     }
 
     syncFromSupabase()
-  }, [user])
+  }, [user, activeTab]) // ✅ FIX: Aggiunto activeTab per ricaricare quando cambi scheda
 
+  // ✅ FIX: Salvataggio automatico SOLO se ci sono modifiche locali (non sovrascrive Supabase)
   useEffect(() => {
-    if (user && activeDay && activeDay.isActive) {
+    if (user && activeDay && activeDay.isActive && dailyLog.length > 0) {
       const saveTimer = setTimeout(async () => {
         try {
+          console.log('💾 [Auto-save] Salvataggio diario su Supabase, entries:', dailyLog.length)
           await saveDailyLogDB(user.id, {
             start_date: activeDay.startDate,
             end_date: activeDay.endDate || null,
             is_active: true,
             entries: dailyLog
           })
+          console.log('✅ [Auto-save] Diario salvato su Supabase')
         } catch (err) {
-          console.error('Errore salvataggio automatico diario:', err)
+          console.error('❌ Errore salvataggio automatico diario:', err)
         }
-      }, 1000)
+      }, 2000) // ✅ FIX: Aumentato a 2 secondi per evitare salvataggi troppo frequenti
       return () => clearTimeout(saveTimer)
     }
   }, [user, activeDay, dailyLog])
@@ -166,7 +183,6 @@ function Alimentazione({ user }) {
     try {
       const saved = await saveDailyLogDB(user.id, newDayData)
       
-      // Aggiornamento immediato e sicuro dello stato locale
       const newActiveDayObj = { 
         id: saved.id, 
         startDate: saved.start_date, 
@@ -176,13 +192,12 @@ function Alimentazione({ user }) {
       setActiveDay(newActiveDayObj)
       setDailyLog([])
       
-      // Sincronizza anche il localStorage per sicurezza
       localStorage.setItem('fitness_app_active_day', JSON.stringify(newActiveDayObj))
       localStorage.setItem('fitness_app_daily_log', JSON.stringify([]))
       
+      console.log('✅ [Nuovo Giorno] Creato su Supabase:', saved.id)
     } catch (err) {
       console.error("ERRORE salvataggio nuovo giorno:", err)
-      // Fallback locale se Supabase fallisce
       const localDay = startNewDay()
       setActiveDay(localDay)
       setDailyLog([])
@@ -349,7 +364,7 @@ function Alimentazione({ user }) {
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1">
                         <p className="text-white font-semibold text-lg">{entry.name}</p>
-                        <p className="text-sm text-gray-400">🔥 {Math.round(entry.calories)} kcal • Pro: {round1(entry.pro)}g • Carbo: {round1(entry.carb)}g • Grassi: {round1(entry.gra)}g</p>
+                        <p className="text-sm text-gray-400">🔥 {Math.round(entry.calories || 0)} kcal • Pro: {round1(entry.pro || 0)}g • Carbo: {round1(entry.carb || 0)}g • Grassi: {round1(entry.gra || 0)}g</p>
                       </div>
                       <button onClick={() => handleRemoveFromDailyLog(entry.id)} className="text-red-500 hover:text-red-400 text-sm ml-2">🗑</button>
                     </div>
