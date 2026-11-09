@@ -17,28 +17,26 @@ export function useDailyLog(user) {
 
     const syncFromSupabase = async () => {
       try {
-        console.log('🔄 [useDailyLog] Caricamento diretto da Supabase...')
-        console.log('👤 [useDailyLog] User ID:', user.id)
+        console.log('🔄 [useDailyLog] Caricamento da Supabase...')
         
-        // Query DIRETTA a Supabase (bypassa supabaseData.js)
+        // Usa .maybeSingle() invece di .single() per gestire 0 o 1 riga
         const { data, error } = await supabase
           .from('daily_logs')
           .select('*')
           .eq('user_id', user.id)
           .eq('is_active', true)
-          .single()
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
 
-        console.log('📋 [useDailyLog] Risposta Supabase:', { data, error })
+        console.log('📋 [useDailyLog] Risposta:', { data, error })
         
         if (error) {
-          console.error(' [useDailyLog] Errore Supabase:', error)
-          if (error.code === 'PGRST116') {
-            console.log('ℹ️ [useDailyLog] Nessun record trovato (normale)')
-          }
+          console.error('❌ [useDailyLog] Errore:', error)
         }
         
         if (data && data.is_active) {
-          console.log('✅ [useDailyLog] Diario attivo trovato! Entries:', data.entries?.length)
+          console.log('✅ [useDailyLog] Diario attivo trovato:', data.entries?.length, 'entries')
           
           setDailyLogState(data.entries || [])
           localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(data.entries || []))
@@ -54,15 +52,13 @@ export function useDailyLog(user) {
           
         } else {
           console.log('⚠️ [useDailyLog] Nessun diario attivo')
-          // Fallback a localStorage
           const savedLog = localStorage.getItem(DAILY_LOG_KEY)
           const savedDay = localStorage.getItem(ACTIVE_DAY_KEY)
           if (savedLog) setDailyLogState(JSON.parse(savedLog))
           if (savedDay) setActiveDayState(JSON.parse(savedDay))
         }
       } catch (err) {
-        console.error(' [useDailyLog] Errore eccezione:', err)
-        // Fallback a localStorage
+        console.error('❌ [useDailyLog] Errore eccezione:', err)
         const savedLog = localStorage.getItem(DAILY_LOG_KEY)
         const savedDay = localStorage.getItem(ACTIVE_DAY_KEY)
         if (savedLog) setDailyLogState(JSON.parse(savedLog))
@@ -75,26 +71,25 @@ export function useDailyLog(user) {
     syncFromSupabase()
   }, [user])
 
-  // Salvataggio diretto su Supabase
+  // Salvataggio con chiusura del vecchio giorno
   useEffect(() => {
     if (!user || !activeDay || !activeDay.isActive || !isLoaded) return
 
     const saveTimer = setTimeout(async () => {
       try {
-        console.log(' [useDailyLog] Salvataggio su Supabase...', dailyLog.length, 'entries')
+        console.log('💾 [useDailyLog] Salvataggio...', dailyLog.length, 'entries')
         
-        // Prima cerca se esiste già
+        // Prima cerca se esiste già un giorno con la stessa start_date
         const { data: existing } = await supabase
           .from('daily_logs')
           .select('id')
           .eq('user_id', user.id)
           .eq('start_date', activeDay.startDate)
-          .single()
+          .maybeSingle()
 
         let result
         if (existing) {
-          // Aggiorna
-          console.log('🔄 [useDailyLog] Aggiorno record esistente:', existing.id)
+          console.log('🔄 [useDailyLog] Aggiorno:', existing.id)
           const { data, error } = await supabase
             .from('daily_logs')
             .update({
@@ -104,13 +99,12 @@ export function useDailyLog(user) {
             })
             .eq('id', existing.id)
             .select()
-            .single()
+            .maybeSingle()
           
           if (error) throw error
           result = data
         } else {
-          // Crea nuovo
-          console.log('➕ [useDailyLog] Creo nuovo record')
+          console.log('➕ [useDailyLog] Creo nuovo')
           const { data, error } = await supabase
             .from('daily_logs')
             .insert({
@@ -121,15 +115,15 @@ export function useDailyLog(user) {
               entries: dailyLog
             })
             .select()
-            .single()
+            .maybeSingle()
           
           if (error) throw error
           result = data
         }
         
-        console.log('✅ [useDailyLog] Salvataggio completato:', result)
+        console.log('✅ [useDailyLog] Salvato:', result)
       } catch (err) {
-        console.error(' [useDailyLog] Errore salvataggio:', err)
+        console.error('❌ [useDailyLog] Errore salvataggio:', err)
       }
     }, 1500)
 
@@ -137,13 +131,11 @@ export function useDailyLog(user) {
   }, [user, activeDay, dailyLog, isLoaded])
 
   const setDailyLog = useCallback((newLog) => {
-    console.log(' [useDailyLog] Update locale:', newLog.length, 'entries')
     setDailyLogState(newLog)
     localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(newLog))
   }, [])
 
   const setActiveDay = useCallback((newDay) => {
-    console.log(' [useDailyLog] Update activeDay:', newDay)
     setActiveDayState(newDay)
     localStorage.setItem(ACTIVE_DAY_KEY, JSON.stringify(newDay))
   }, [])

@@ -114,19 +114,39 @@ function Alimentazione({ user }) {
   }, [user])
 
   const handleStartNewDay = async () => {
-    if (!user) return
+  if (!user) return
+  
+  if (activeDay && activeDay.isActive) {
+    if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
     
-    if (activeDay && activeDay.isActive) {
-      if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
+    // CHIUDI il giorno corrente su Supabase
+    try {
+      console.log('🔒 [Alimentazione] Chiudo giorno:', activeDay.id)
+      await supabase
+        .from('daily_logs')
+        .update({ is_active: false, end_date: new Date().toISOString() })
+        .eq('id', activeDay.id)
+      
       endCurrentDay()
+    } catch (err) {
+      console.error('Errore chiusura giorno:', err)
     }
-
-    const localDay = startNewDay()
-    setActiveDay(localDay)
-    setDailyLog([])
-    
-    console.log('✅ [Alimentazione] Nuovo giorno iniziato:', localDay)
   }
+
+  // Crea il nuovo giorno
+  const newDayData = { 
+    start_date: new Date().toISOString().split('T')[0], 
+    end_date: null, 
+    is_active: true, 
+    entries: [] 
+  }
+  
+  const localDay = startNewDay()
+  setActiveDay(localDay)
+  setDailyLog([])
+  
+  console.log('✅ [Alimentazione] Nuovo giorno creato:', localDay)
+}
 
   const calcolaFabbisogno = async () => {
     if (!profile || !profile.eta || !profile.altezza) { alert('Completa prima la sezione Dati → Anagrafica!'); return }
