@@ -5,19 +5,16 @@ import {
   loadFoods as loadFoodsDB, 
   saveFood as saveFoodDB, 
   deleteFood as deleteFoodDB,
-  loadActiveDailyLog as loadActiveDailyLogDB,
-  saveDailyLog as saveDailyLogDB,
   loadTargets as loadTargetsDB,
   saveTargets as saveTargetsDB,
   loadUserProfile as loadUserProfileDB
 } from '../utils/supabaseData'
+import { useDailyLog } from '../hooks/useDailyLog'
 import {
   getFoods,
-  getTodayLog,
   addToDailyLog,
   removeFromDailyLog,
   updateFoodGrams,
-  getActiveDay,
   startNewDay,
   endCurrentDay,
 } from '../utils/foodDatabase'
@@ -36,14 +33,12 @@ function Alimentazione({ user }) {
   const [editingFood, setEditingFood] = useState(null)
   const [editingGrams, setEditingGrams] = useState(null)
 
+  // ✅ USA IL HOOK CENTRALIZZATO
+  const { dailyLog, setDailyLog, activeDay, setActiveDay } = useDailyLog(user)
+
   const [foods, setFoods] = useState(() => {
     const saved = localStorage.getItem('fitness_app_foods')
     return saved ? JSON.parse(saved) : getFoods()
-  })
-  
-  const [dailyLog, setDailyLog] = useState(() => {
-    const saved = localStorage.getItem('fitness_app_daily_log')
-    return saved ? JSON.parse(saved) : getTodayLog()
   })
 
   const [targets, setTargets] = useState(() => {
@@ -57,13 +52,11 @@ function Alimentazione({ user }) {
   })
 
   const [averageWeight, setAverageWeight] = useState(() => getAverageWeight() || 0)
-  const [activeDay, setActiveDay] = useState(() => getActiveDay())
-  
   const [attivita, setAttivita] = useState('moderata')
   const [obiettivo, setObiettivo] = useState('mantenimento')
   const [multipliers, setMultipliers] = useState({ pro: '', gra: '', fib: '' })
 
-  // ✅ FIX: calculateTotals gestisce correttamente grams undefined/0
+  // ✅ Calcola i totali in modo sicuro
   const calculateTotals = (log) => {
     if (!log || log.length === 0) {
       return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
@@ -83,21 +76,14 @@ function Alimentazione({ user }) {
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
 
-  const [dailyTotals, setDailyTotals] = useState(() => calculateTotals(dailyLog))
+  const dailyTotals = calculateTotals(dailyLog)
 
-  // ✅ FIX: Ricalcola i totali quando dailyLog cambia
-  useEffect(() => {
-    setDailyTotals(calculateTotals(dailyLog))
-  }, [dailyLog])
-
-  // ✅ FIX: Sincronizzazione da Supabase con dipendenza su activeTab
+  // Carica dati utente da Supabase
   useEffect(() => {
     if (!user) return
 
     const syncFromSupabase = async () => {
       try {
-        console.log('🔄 [Alimentazione] Sincronizzazione da Supabase...')
-        
         const dbProfile = await loadUserProfileDB(user.id)
         if (dbProfile) {
           const p = { genere: dbProfile.genere || 'M', eta: dbProfile.eta, altezza: dbProfile.altezza, dataNascita: dbProfile.data_nascita }
@@ -107,18 +93,6 @@ function Alimentazione({ user }) {
 
         const avgWeight = getAverageWeight()
         if (avgWeight) setAverageWeight(avgWeight)
-
-        const dbLog = await loadActiveDailyLogDB(user.id)
-        console.log('📋 [Alimentazione] Daily log da Supabase:', dbLog)
-        
-        if (dbLog && dbLog.is_active) {
-          console.log('✅ [Alimentazione] Diario attivo trovato, entries:', dbLog.entries?.length || 0)
-          setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
-          setDailyLog(dbLog.entries || [])
-          localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries || []))
-        } else {
-          console.warn('⚠️ [Alimentazione] Nessun diario attivo su Supabase')
-        }
 
         const dbTargets = await loadTargetsDB(user.id)
         if (dbTargets && dbTargets.calories > 0) {
@@ -132,76 +106,26 @@ function Alimentazione({ user }) {
           localStorage.setItem('fitness_app_foods', JSON.stringify(supabaseFoods))
         }
       } catch (err) {
-        console.error('❌ Errore sincronizzazione:', err)
+        console.error('Errore sincronizzazione:', err)
       }
     }
 
     syncFromSupabase()
-  }, [user, activeTab]) // ✅ FIX: Aggiunto activeTab per ricaricare quando cambi scheda
-
-  // ✅ FIX: Salvataggio automatico SOLO se ci sono modifiche locali (non sovrascrive Supabase)
-  useEffect(() => {
-    if (user && activeDay && activeDay.isActive && dailyLog.length > 0) {
-      const saveTimer = setTimeout(async () => {
-        try {
-          console.log('💾 [Auto-save] Salvataggio diario su Supabase, entries:', dailyLog.length)
-          await saveDailyLogDB(user.id, {
-            start_date: activeDay.startDate,
-            end_date: activeDay.endDate || null,
-            is_active: true,
-            entries: dailyLog
-          })
-          console.log('✅ [Auto-save] Diario salvato su Supabase')
-        } catch (err) {
-          console.error('❌ Errore salvataggio automatico diario:', err)
-        }
-      }, 2000) // ✅ FIX: Aumentato a 2 secondi per evitare salvataggi troppo frequenti
-      return () => clearTimeout(saveTimer)
-    }
-  }, [user, activeDay, dailyLog])
+  }, [user])
 
   const handleStartNewDay = async () => {
     if (!user) return
     
     if (activeDay && activeDay.isActive) {
       if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
-      try {
-        await saveDailyLogDB(user.id, { start_date: activeDay.startDate, end_date: new Date().toISOString(), is_active: false, entries: dailyLog })
-      } catch (err) { 
-        console.error('Errore chiusura giorno:', err) 
-      }
       endCurrentDay()
     }
 
-    const newDayData = { 
-      start_date: new Date().toISOString().split('T')[0], 
-      end_date: null, 
-      is_active: true, 
-      entries: [] 
-    }
+    const localDay = startNewDay()
+    setActiveDay(localDay)
+    setDailyLog([])
     
-    try {
-      const saved = await saveDailyLogDB(user.id, newDayData)
-      
-      const newActiveDayObj = { 
-        id: saved.id, 
-        startDate: saved.start_date, 
-        endDate: saved.end_date, 
-        isActive: true 
-      }
-      setActiveDay(newActiveDayObj)
-      setDailyLog([])
-      
-      localStorage.setItem('fitness_app_active_day', JSON.stringify(newActiveDayObj))
-      localStorage.setItem('fitness_app_daily_log', JSON.stringify([]))
-      
-      console.log('✅ [Nuovo Giorno] Creato su Supabase:', saved.id)
-    } catch (err) {
-      console.error("ERRORE salvataggio nuovo giorno:", err)
-      const localDay = startNewDay()
-      setActiveDay(localDay)
-      setDailyLog([])
-    }
+    console.log('✅ [Alimentazione] Nuovo giorno iniziato:', localDay)
   }
 
   const calcolaFabbisogno = async () => {
@@ -285,16 +209,21 @@ function Alimentazione({ user }) {
       alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
       return 
     }
-    setDailyLog(addToDailyLog(food, grams))
+    const newLog = addToDailyLog(food, grams)
+    setDailyLog(newLog)
+    console.log('➕ [Alimentazione] Alimento aggiunto:', food.name, 'Totali entries:', newLog.length)
   }
 
   const handleRemoveFromDailyLog = (entryId) => {
-    setDailyLog(removeFromDailyLog(entryId))
+    const newLog = removeFromDailyLog(entryId)
+    setDailyLog(newLog)
+    console.log('🗑 [Alimentazione] Alimento rimosso. Entries rimasti:', newLog.length)
   }
 
   const handleUpdateGrams = (entryId, newGrams) => {
     if (newGrams <= 0) { alert('Inserisci una quantità valida!'); return }
-    setDailyLog(updateFoodGrams(entryId, newGrams))
+    const newLog = updateFoodGrams(entryId, newGrams)
+    setDailyLog(newLog)
     setEditingGrams(null)
   }
 
