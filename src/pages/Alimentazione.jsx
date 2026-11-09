@@ -61,8 +61,6 @@ function Alimentazione({ user }) {
   
   const [attivita, setAttivita] = useState('moderata')
   const [obiettivo, setObiettivo] = useState('mantenimento')
-  
-  // ✅ CAMPI VUOTI DI DEFAULT (nessun numero preimpostato)
   const [multipliers, setMultipliers] = useState({ pro: '', gra: '', fib: '' })
 
   const calculateTotals = (log) => {
@@ -100,10 +98,12 @@ function Alimentazione({ user }) {
         const avgWeight = getAverageWeight()
         if (avgWeight) setAverageWeight(avgWeight)
 
+        // ✅ FIX: Rimosso il controllo "length > 0". Un giorno è attivo anche se ha 0 alimenti!
         const dbLog = await loadActiveDailyLogDB(user.id)
-        if (dbLog && dbLog.is_active && dbLog.entries && dbLog.entries.length > 0) {
+        if (dbLog && dbLog.is_active) {
           setActiveDay({ id: dbLog.id, startDate: dbLog.start_date, endDate: dbLog.end_date, isActive: true })
-          setDailyLog(dbLog.entries)
+          setDailyLog(dbLog.entries || [])
+          localStorage.setItem('fitness_app_daily_log', JSON.stringify(dbLog.entries || []))
         }
 
         const dbTargets = await loadTargetsDB(user.id)
@@ -145,24 +145,47 @@ function Alimentazione({ user }) {
 
   const handleStartNewDay = async () => {
     if (!user) return
+    
     if (activeDay && activeDay.isActive) {
       if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
       try {
         await saveDailyLogDB(user.id, { start_date: activeDay.startDate, end_date: new Date().toISOString(), is_active: false, entries: dailyLog })
-      } catch (err) { console.error('Errore chiusura giorno:', err) }
+      } catch (err) { 
+        console.error('Errore chiusura giorno:', err) 
+      }
       endCurrentDay()
     }
 
-    const newDayData = { start_date: new Date().toISOString().split('T')[0], end_date: null, is_active: true, entries: [] }
+    const newDayData = { 
+      start_date: new Date().toISOString().split('T')[0], 
+      end_date: null, 
+      is_active: true, 
+      entries: [] 
+    }
+    
     try {
       const saved = await saveDailyLogDB(user.id, newDayData)
-      setActiveDay({ id: saved.id, startDate: saved.start_date, endDate: saved.end_date, isActive: true })
+      
+      // Aggiornamento immediato e sicuro dello stato locale
+      const newActiveDayObj = { 
+        id: saved.id, 
+        startDate: saved.start_date, 
+        endDate: saved.end_date, 
+        isActive: true 
+      }
+      setActiveDay(newActiveDayObj)
       setDailyLog([])
+      
+      // Sincronizza anche il localStorage per sicurezza
+      localStorage.setItem('fitness_app_active_day', JSON.stringify(newActiveDayObj))
+      localStorage.setItem('fitness_app_daily_log', JSON.stringify([]))
+      
     } catch (err) {
       console.error("ERRORE salvataggio nuovo giorno:", err)
-      startNewDay()
-      setActiveDay(getActiveDay())
-      setDailyLog(getTodayLog())
+      // Fallback locale se Supabase fallisce
+      const localDay = startNewDay()
+      setActiveDay(localDay)
+      setDailyLog([])
     }
   }
 
@@ -173,7 +196,6 @@ function Alimentazione({ user }) {
     const { eta, altezza, genere } = profile
     const peso = averageWeight
     
-    // ✅ Parsing sicuro: se il campo è vuoto, usa 0
     const proVal = parseFloat(multipliers.pro) || 0
     const graVal = parseFloat(multipliers.gra) || 0
     const fibVal = parseFloat(multipliers.fib) || 0
@@ -214,11 +236,8 @@ function Alimentazione({ user }) {
     setObiettivo(presetName)
   }
 
-  // ✅ FUNZIONE FIXATA PER iOS: accetta virgola, punto e campo vuoto senza resettare
   const handleMultiplierChange = (field, value) => {
-    const cleanValue = value.replace(',', '.') // Trasforma virgola in punto
-    
-    // Regex: permette stringa vuota, o numeri con opzionale punto decimale (es. "1", "1.", "1.6")
+    const cleanValue = value.replace(',', '.')
     if (cleanValue === '' || /^\d*\.?\d*$/.test(cleanValue)) {
       const newMultipliers = { ...multipliers, [field]: cleanValue }
       setMultipliers(newMultipliers)
@@ -247,7 +266,10 @@ function Alimentazione({ user }) {
   }
 
   const handleAddToDailyLog = (food, grams) => {
-    if (!activeDay || !activeDay.isActive) { alert('Inizia un nuovo giorno prima di aggiungere alimenti!'); return }
+    if (!activeDay || !activeDay.isActive) { 
+      alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
+      return 
+    }
     setDailyLog(addToDailyLog(food, grams))
   }
 
@@ -281,7 +303,11 @@ function Alimentazione({ user }) {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-lg font-semibold text-white mb-1">Giorno Attivo</h3>
-                {activeDay && activeDay.isActive ? <p className="text-sm text-electric">Iniziato: {formatDate(activeDay.startDate)}</p> : <p className="text-sm text-gray-400">Nessun giorno attivo</p>}
+                {activeDay && activeDay.isActive ? (
+                  <p className="text-sm text-electric">Iniziato: {formatDate(activeDay.startDate)}</p>
+                ) : (
+                  <p className="text-sm text-gray-400">Nessun giorno attivo</p>
+                )}
               </div>
               <button onClick={handleStartNewDay} className="bg-electric text-black font-bold px-4 py-2 rounded-lg text-sm active:scale-95 transition-transform">
                 {activeDay && activeDay.isActive ? '🔄 Nuovo Giorno' : '▶️ Inizia Giorno'}
@@ -385,38 +411,17 @@ function Alimentazione({ user }) {
                   <label className="text-xs text-gray-400 mb-1 block">
                     Proteine: {multipliers.pro || '0'} g/kg → {Math.ceil((parseFloat(multipliers.pro) || 0) * (averageWeight || 0))}g
                   </label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal" 
-                    value={multipliers.pro} 
-                    onChange={(e) => handleMultiplierChange('pro', e.target.value)} 
-                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
-                    placeholder="es. 1.6"
-                  />
+                  <input type="text" inputMode="decimal" value={multipliers.pro} onChange={(e) => handleMultiplierChange('pro', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" placeholder="es. 1.6" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 mb-1 block">
                     Grassi: {multipliers.gra || '0'} g/kg → {Math.ceil((parseFloat(multipliers.gra) || 0) * (averageWeight || 0))}g
                   </label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal" 
-                    value={multipliers.gra} 
-                    onChange={(e) => handleMultiplierChange('gra', e.target.value)} 
-                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
-                    placeholder="es. 0.9"
-                  />
+                  <input type="text" inputMode="decimal" value={multipliers.gra} onChange={(e) => handleMultiplierChange('gra', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" placeholder="es. 0.9" />
                 </div>
                 <div>
                   <label className="text-xs text-gray-400 mb-1 block">Fibre (g fissi)</label>
-                  <input 
-                    type="text" 
-                    inputMode="decimal" 
-                    value={multipliers.fib} 
-                    onChange={(e) => handleMultiplierChange('fib', e.target.value)} 
-                    className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" 
-                    placeholder="es. 30"
-                  />
+                  <input type="text" inputMode="decimal" value={multipliers.fib} onChange={(e) => handleMultiplierChange('fib', e.target.value)} className="w-full bg-gray-800 border border-border text-white rounded-lg px-3 py-2 focus:outline-none focus:border-electric" placeholder="es. 30" />
                 </div>
               </div>
 
