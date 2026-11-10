@@ -8,27 +8,7 @@ export function useDailyLog(user) {
   const [dailyLog, setDailyLogState] = useState([])
   const [activeDay, setActiveDayState] = useState(null)
   const [isLoaded, setIsLoaded] = useState(false)
-  const [hasLocalData, setHasLocalData] = useState(false)
 
-  // Carica dati locali all'avvio
-  useEffect(() => {
-    const savedLog = localStorage.getItem(DAILY_LOG_KEY)
-    const savedDay = localStorage.getItem(ACTIVE_DAY_KEY)
-    
-    if (savedLog && savedDay) {
-      const log = JSON.parse(savedLog)
-      const day = JSON.parse(savedDay)
-      
-      if (log.length > 0) {
-        console.log('💾 [useDailyLog] Dati locali trovati:', log.length, 'entries')
-        setDailyLogState(log)
-        setActiveDayState(day)
-        setHasLocalData(true)
-      }
-    }
-  }, [])
-
-  // Sincronizza con Supabase
   useEffect(() => {
     if (!user) {
       setIsLoaded(true)
@@ -39,7 +19,6 @@ export function useDailyLog(user) {
       try {
         console.log('🔄 [useDailyLog] Sincronizzazione da Supabase...')
         
-        // Cerca il giorno attivo più recente
         const { data, error } = await supabase
           .from('daily_logs')
           .select('*')
@@ -59,53 +38,32 @@ export function useDailyLog(user) {
           console.error(' [useDailyLog] Errore Supabase:', error)
         }
         
+        // ✅ SEMPRE Supabase come fonte di verità
         if (data && data.is_active) {
-  console.log('✅ [useDailyLog] Diario attivo trovato:', data.entries?.length || 0, 'entries')
+          console.log('✅ [useDailyLog] Diario attivo trovato:', data.entries?.length || 0, 'entries')
           
-          // ✅ IMPORTANTE: Merge intelligente
-          // Se i dati locali hanno PIÙ entries di Supabase, mantieni i locali
-          const localLog = JSON.parse(localStorage.getItem(DAILY_LOG_KEY) || '[]')
-
-            // Se ci sono entries, usale. Altrimenti array vuoto.
-  const entries = data.entries || []
+          const entries = data.entries || []
+          setDailyLogState(entries)
+          localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(entries))
           
-          if (localLog.length > data.entries.length) {
-            console.log('️ [useDailyLog] Dati locali più recenti, mantengo locali')
-            // Mantieni i dati locali ma aggiorna l'ID del giorno da Supabase
-            const mergedDay = { 
-              id: data.id, 
-              startDate: data.start_date, 
-              endDate: data.end_date, 
-              isActive: true 
-            }
-            setActiveDayState(mergedDay)
-            localStorage.setItem(ACTIVE_DAY_KEY, JSON.stringify(mergedDay))
-            // Non sovrascrivere dailyLog!
-          } else {
-            console.log('📥 [useDailyLog] Uso dati da Supabase')
-            setDailyLogState(data.entries)
-            localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(data.entries))
-            
-            const newActiveDay = { 
-              id: data.id, 
-              startDate: data.start_date, 
-              endDate: data.end_date, 
-              isActive: true 
-            }
-            setActiveDayState(newActiveDay)
-            localStorage.setItem(ACTIVE_DAY_KEY, JSON.stringify(newActiveDay))
+          const newActiveDay = { 
+            id: data.id, 
+            startDate: data.start_date, 
+            endDate: data.end_date, 
+            isActive: true 
           }
+          setActiveDayState(newActiveDay)
+          localStorage.setItem(ACTIVE_DAY_KEY, JSON.stringify(newActiveDay))
         } else {
-          console.log('⚠️ [useDailyLog] Nessun diario attivo su Supabase, uso localStorage')
-          // Se Supabase non ha dati, mantieni SEMPRE i dati locali
-          if (hasLocalData) {
-            console.log(' [useDailyLog] Mantengo dati locali esistenti')
-          }
+          console.log('⚠️ [useDailyLog] Nessun diario attivo su Supabase')
+          // Solo se Supabase non ha nulla, usa localStorage
+          const savedLog = localStorage.getItem(DAILY_LOG_KEY)
+          const savedDay = localStorage.getItem(ACTIVE_DAY_KEY)
+          if (savedLog) setDailyLogState(JSON.parse(savedLog))
+          if (savedDay) setActiveDayState(JSON.parse(savedDay))
         }
       } catch (err) {
-        console.error('❌ [useDailyLog] Errore eccezione:', err)
-        // In caso di errore, mantieni SEMPRE i dati locali
-        console.log('💾 [useDailyLog] Errore, mantengo dati locali')
+        console.error(' [useDailyLog] Errore eccezione:', err)
       } finally {
         setIsLoaded(true)
       }
@@ -114,21 +72,13 @@ export function useDailyLog(user) {
     syncFromSupabase()
   }, [user])
 
-  // Salvataggio IMMEDIATO su Supabase (senza debounce quando aggiungi alimenti)
+  // Salvataggio su Supabase
   const saveToSupabase = useCallback(async (logToSave, dayToSave) => {
-    if (!user || !dayToSave || !dayToSave.isActive) {
-      console.log('⏸️ [useDailyLog] Salvataggio skip:', { 
-        hasUser: !!user, 
-        hasDay: !!dayToSave, 
-        isActive: dayToSave?.isActive 
-      })
-      return
-    }
+    if (!user || !dayToSave || !dayToSave.isActive) return
 
     try {
-      console.log('💾 [useDailyLog] SALVATAGGIO IMMEDIATO:', logToSave.length, 'entries')
+      console.log(' [useDailyLog] Salvataggio su Supabase:', logToSave.length, 'entries')
       
-      // Cerca se esiste già un giorno con questa start_date
       const { data: existing } = await supabase
         .from('daily_logs')
         .select('id')
@@ -170,46 +120,33 @@ export function useDailyLog(user) {
         result = data
       }
       
-      console.log('✅ [useDailyLog] Salvataggio completato:', result)
+      console.log('✅ [useDailyLog] Salvataggio completato')
     } catch (err) {
-      console.error('❌ [useDailyLog] Errore salvataggio:', err)
-      console.error('❌ [useDailyLog] Dettagli:', err.message)
+      console.error(' [useDailyLog] Errore salvataggio:', err)
     }
   }, [user])
 
-  // Salvataggio automatico con debounce SOLO per modifiche minori
   useEffect(() => {
     if (!user || !activeDay || !activeDay.isActive || !isLoaded) return
 
     const saveTimer = setTimeout(() => {
       saveToSupabase(dailyLog, activeDay)
-    }, 2000)
+    }, 1500)
 
     return () => clearTimeout(saveTimer)
   }, [user, activeDay, dailyLog, isLoaded, saveToSupabase])
 
-  // Funzione pubblica per impostare il daily log con salvataggio immediato
   const setDailyLog = useCallback((newLog) => {
     console.log('📝 [useDailyLog] Update dailyLog:', newLog.length, 'entries')
     setDailyLogState(newLog)
     localStorage.setItem(DAILY_LOG_KEY, JSON.stringify(newLog))
-    
-    // Salvataggio immediato quando cambia il log
-    if (activeDay) {
-      saveToSupabase(newLog, activeDay)
-    }
-  }, [activeDay, saveToSupabase])
+  }, [])
 
   const setActiveDay = useCallback((newDay) => {
-    console.log('📅 [useDailyLog] Update activeDay:', newDay)
+    console.log(' [useDailyLog] Update activeDay')
     setActiveDayState(newDay)
     localStorage.setItem(ACTIVE_DAY_KEY, JSON.stringify(newDay))
-    
-    // Se cambio giorno, salvo immediatamente
-    if (newDay && newDay.isActive && dailyLog.length > 0) {
-      saveToSupabase(dailyLog, newDay)
-    }
-  }, [dailyLog, saveToSupabase])
+  }, [])
 
   return { dailyLog, setDailyLog, activeDay, setActiveDay, isLoaded }
 }
