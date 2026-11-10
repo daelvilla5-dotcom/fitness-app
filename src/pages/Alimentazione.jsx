@@ -10,6 +10,7 @@ import {
   loadUserProfile as loadUserProfileDB
 } from '../utils/supabaseData'
 import { useDailyLog } from '../hooks/useDailyLog'
+import { supabase } from '../supabaseClient'
 import {
   getFoods,
   addToDailyLog,
@@ -111,38 +112,40 @@ function Alimentazione({ user }) {
   }, [user])
 
   const handleStartNewDay = async () => {
-  if (!user) return
+  if (!user) {
+    alert('Devi essere loggato!')
+    return
+  }
   
+  // Chiudi il giorno corrente se esiste
   if (activeDay && activeDay.isActive) {
     if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
     
-    // CHIUDI il giorno corrente su Supabase
     try {
       console.log('🔒 [Alimentazione] Chiudo giorno:', activeDay.id)
       await supabase
         .from('daily_logs')
         .update({ is_active: false, end_date: new Date().toISOString() })
         .eq('id', activeDay.id)
-      
-      endCurrentDay()
     } catch (err) {
       console.error('Errore chiusura giorno:', err)
     }
   }
 
-  // Crea il nuovo giorno
-  const newDayData = { 
-    start_date: new Date().toISOString().split('T')[0], 
-    end_date: null, 
-    is_active: true, 
-    entries: [] 
+  // Crea NUOVO giorno OGGI
+  const today = new Date().toISOString().split('T')[0]
+  const newDay = {
+    id: null, // Sarà impostato da Supabase al primo salvataggio
+    startDate: today,
+    endDate: null,
+    isActive: true
   }
   
-  const localDay = startNewDay()
-  setActiveDay(localDay)
-  setDailyLog([])
+  console.log('✅ [Alimentazione] Nuovo giorno creato:', newDay)
   
-  console.log('✅ [Alimentazione] Nuovo giorno creato:', localDay)
+  // Imposta activeDay e dailyLog vuoto
+  setActiveDay(newDay)
+  setDailyLog([])
 }
 
   const calcolaFabbisogno = async () => {
@@ -230,7 +233,7 @@ function Alimentazione({ user }) {
   console.log('➕ [Alimentazione] Aggiunta alimento:', food.name, grams, 'g')
   console.log('📋 [Alimentazione] DailyLog prima:', dailyLog.length, 'entries')
   
-  // Calcola i valori nutrizionali per i grammi inseriti
+  // Calcola i valori nutrizionali
   const multiplier = grams / 100
   const newEntry = {
     id: Date.now(),
@@ -243,11 +246,12 @@ function Alimentazione({ user }) {
     grams: grams
   }
   
-  // ✅ AGGIUNGI all'array esistente, non sovrascrivere!
+  // ✅ AGGIUNGI all'array esistente
   const newLog = [...dailyLog, newEntry]
   
   console.log('📋 [Alimentazione] DailyLog dopo:', newLog.length, 'entries')
   
+  // Imposta il nuovo log (triggera salvataggio automatico)
   setDailyLog(newLog)
 }
 

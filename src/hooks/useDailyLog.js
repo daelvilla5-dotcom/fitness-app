@@ -59,12 +59,15 @@ export function useDailyLog(user) {
           console.error(' [useDailyLog] Errore Supabase:', error)
         }
         
-        if (data && data.is_active && data.entries && data.entries.length > 0) {
-          console.log('✅ [useDailyLog] Diario attivo trovato da Supabase:', data.entries.length, 'entries')
+        if (data && data.is_active) {
+  console.log('✅ [useDailyLog] Diario attivo trovato:', data.entries?.length || 0, 'entries')
           
           // ✅ IMPORTANTE: Merge intelligente
           // Se i dati locali hanno PIÙ entries di Supabase, mantieni i locali
           const localLog = JSON.parse(localStorage.getItem(DAILY_LOG_KEY) || '[]')
+
+            // Se ci sono entries, usale. Altrimenti array vuoto.
+  const entries = data.entries || []
           
           if (localLog.length > data.entries.length) {
             console.log('️ [useDailyLog] Dati locali più recenti, mantengo locali')
