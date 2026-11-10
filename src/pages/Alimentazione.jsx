@@ -222,14 +222,34 @@ function Alimentazione({ user }) {
   }
 
   const handleAddToDailyLog = (food, grams) => {
-    if (!activeDay || !activeDay.isActive) { 
-      alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
-      return 
-    }
-    const newLog = addToDailyLog(food, grams)
-    setDailyLog(newLog)
-    console.log('➕ [Alimentazione] Alimento aggiunto:', food.name, 'Totali entries:', newLog.length)
+  if (!activeDay || !activeDay.isActive) { 
+    alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
+    return 
   }
+  
+  console.log('➕ [Alimentazione] Aggiunta alimento:', food.name, grams, 'g')
+  console.log('📋 [Alimentazione] DailyLog prima:', dailyLog.length, 'entries')
+  
+  // Calcola i valori nutrizionali per i grammi inseriti
+  const multiplier = grams / 100
+  const newEntry = {
+    id: Date.now(),
+    name: food.name,
+    calories: Math.round((food.calories || 0) * multiplier),
+    pro: Math.round((food.pro || 0) * multiplier * 10) / 10,
+    carb: Math.round((food.carb || 0) * multiplier * 10) / 10,
+    gra: Math.round((food.gra || 0) * multiplier * 10) / 10,
+    fib: Math.round((food.fib || 0) * multiplier * 10) / 10,
+    grams: grams
+  }
+  
+  // ✅ AGGIUNGI all'array esistente, non sovrascrivere!
+  const newLog = [...dailyLog, newEntry]
+  
+  console.log('📋 [Alimentazione] DailyLog dopo:', newLog.length, 'entries')
+  
+  setDailyLog(newLog)
+}
 
   const handleRemoveFromDailyLog = (entryId) => {
     const newLog = removeFromDailyLog(entryId)
