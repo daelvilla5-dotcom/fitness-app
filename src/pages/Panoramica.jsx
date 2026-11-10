@@ -29,22 +29,19 @@ function Panoramica({ user }) {
     syncData()
   }, [user])
 
-  // ✅ Calcola i totali usando gli stessi dati di Alimentazione
+  // ✅ STESSA FUNZIONE DI ALIMENTAZIONE: somma diretta senza moltiplicatore
   const calculateTotals = (log) => {
     if (!log || log.length === 0) {
       return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
     }
     
     return log.reduce((acc, entry) => {
-      const grams = entry.grams || 0
-      const multiplier = grams / 100
-      
       return {
-        calories: acc.calories + ((entry.calories || 0) * multiplier),
-        pro: acc.pro + ((entry.pro || 0) * multiplier),
-        carb: acc.carb + ((entry.carb || 0) * multiplier),
-        gra: acc.gra + ((entry.gra || 0) * multiplier),
-        fib: acc.fib + ((entry.fib || 0) * multiplier),
+        calories: acc.calories + (entry.calories || 0),
+        pro: acc.pro + (entry.pro || 0),
+        carb: acc.carb + (entry.carb || 0),
+        gra: acc.gra + (entry.gra || 0),
+        fib: acc.fib + (entry.fib || 0),
       }
     }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
   }
