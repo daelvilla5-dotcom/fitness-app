@@ -256,10 +256,18 @@ function Alimentazione({ user }) {
 }
 
   const handleRemoveFromDailyLog = (entryId) => {
-    const newLog = removeFromDailyLog(entryId)
-    setDailyLog(newLog)
-    console.log('🗑 [Alimentazione] Alimento rimosso. Entries rimasti:', newLog.length)
-  }
+  console.log('🗑 [Alimentazione] Rimozione alimento:', entryId)
+  console.log('📋 [Alimentazione] DailyLog prima:', dailyLog.length, 'entries')
+  
+  // ✅ FILTRA direttamente dallo stato corrente, non da localStorage
+  const newLog = dailyLog.filter(entry => entry.id !== entryId)
+  
+  console.log(' [Alimentazione] DailyLog dopo:', newLog.length, 'entries')
+  console.log(' [Alimentazione] Alimento rimosso. Entries rimasti:', newLog.length)
+  
+  // Aggiorna stato E localStorage
+  setDailyLog(newLog)
+}
 
   const handleUpdateGrams = (entryId, newGrams) => {
     if (newGrams <= 0) { alert('Inserisci una quantità valida!'); return }
