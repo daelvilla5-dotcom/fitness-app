@@ -657,6 +657,25 @@ export async function loadDailyLogsHistory(userId) {
   }
 }
 
+// Carica gli ultimi 7 daily_log CONCLUSI (is_active = false)
+export async function loadLast7CompletedLogs(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('daily_logs')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', false) // Prende solo i giorni chiusi
+      .order('start_date', { ascending: false }) // Dal più recente al più vecchio
+      .limit(7) // Massimo 7 giorni
+
+    if (error) throw error
+    return data || []
+  } catch (err) {
+    console.error('Errore caricamento ultimi 7 log conclusi:', err)
+    return []
+  }
+}
+
 // ============================================
 // ESERCIZI (exercises)
 // ============================================
