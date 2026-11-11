@@ -11,14 +11,7 @@ import {
 } from '../utils/supabaseData'
 import { useDailyLog } from '../hooks/useDailyLog'
 import { supabase } from '../supabaseClient'
-import {
-  getFoods,
-  addToDailyLog,
-  removeFromDailyLog,
-  updateFoodGrams,
-  startNewDay,
-  endCurrentDay,
-} from '../utils/foodDatabase'
+import { getFoods } from '../utils/foodDatabase'
 import {
   getUserProfile,
   getAverageWeight,
@@ -57,22 +50,22 @@ function Alimentazione({ user }) {
   const [obiettivo, setObiettivo] = useState('mantenimento')
   const [multipliers, setMultipliers] = useState({ pro: '', gra: '', fib: '' })
 
-  // ✅ Calcola i totali in modo sicuro
+  // ✅ Calcola i totali in modo sicuro (somma diretta)
   const calculateTotals = (log) => {
-  if (!log || log.length === 0) {
-    return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
-  }
-  
-  return log.reduce((acc, entry) => {
-    return {
-      calories: acc.calories + (entry.calories || 0),
-      pro: acc.pro + (entry.pro || 0),
-      carb: acc.carb + (entry.carb || 0),
-      gra: acc.gra + (entry.gra || 0),
-      fib: acc.fib + (entry.fib || 0),
+    if (!log || log.length === 0) {
+      return { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 }
     }
-  }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-}
+    
+    return log.reduce((acc, entry) => {
+      return {
+        calories: acc.calories + (entry.calories || 0),
+        pro: acc.pro + (entry.pro || 0),
+        carb: acc.carb + (entry.carb || 0),
+        gra: acc.gra + (entry.gra || 0),
+        fib: acc.fib + (entry.fib || 0),
+      }
+    }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+  }
 
   const dailyTotals = calculateTotals(dailyLog)
 
@@ -112,41 +105,38 @@ function Alimentazione({ user }) {
   }, [user])
 
   const handleStartNewDay = async () => {
-  if (!user) {
-    alert('Devi essere loggato!')
-    return
-  }
-  
-  // Chiudi il giorno corrente se esiste
-  if (activeDay && activeDay.isActive) {
-    if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
-    
-    try {
-      console.log('🔒 [Alimentazione] Chiudo giorno:', activeDay.id)
-      await supabase
-        .from('daily_logs')
-        .update({ is_active: false, end_date: new Date().toISOString() })
-        .eq('id', activeDay.id)
-    } catch (err) {
-      console.error('Errore chiusura giorno:', err)
+    if (!user) {
+      alert('Devi essere loggato!')
+      return
     }
-  }
+    
+    if (activeDay && activeDay.isActive) {
+      if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
+      
+      try {
+        console.log('🔒 [Alimentazione] Chiudo giorno:', activeDay.id)
+        await supabase
+          .from('daily_logs')
+          .update({ is_active: false, end_date: new Date().toISOString() })
+          .eq('id', activeDay.id)
+      } catch (err) {
+        console.error('Errore chiusura giorno:', err)
+      }
+    }
 
-  // Crea NUOVO giorno OGGI
-  const today = new Date().toISOString().split('T')[0]
-  const newDay = {
-    id: null, // Sarà impostato da Supabase al primo salvataggio
-    startDate: today,
-    endDate: null,
-    isActive: true
+    const today = new Date().toISOString().split('T')[0]
+    const newDay = {
+      id: null,
+      startDate: today,
+      endDate: null,
+      isActive: true
+    }
+    
+    console.log('✅ [Alimentazione] Nuovo giorno creato:', newDay)
+    
+    setActiveDay(newDay)
+    setDailyLog([])
   }
-  
-  console.log('✅ [Alimentazione] Nuovo giorno creato:', newDay)
-  
-  // Imposta activeDay e dailyLog vuoto
-  setActiveDay(newDay)
-  setDailyLog([])
-}
 
   const calcolaFabbisogno = async () => {
     if (!profile || !profile.eta || !profile.altezza) { alert('Completa prima la sezione Dati → Anagrafica!'); return }
@@ -225,53 +215,72 @@ function Alimentazione({ user }) {
   }
 
   const handleAddToDailyLog = (food, grams) => {
-  if (!activeDay || !activeDay.isActive) { 
-    alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
-    return 
+    if (!activeDay || !activeDay.isActive) { 
+      alert('Inizia un nuovo giorno prima di aggiungere alimenti!')
+      return 
+    }
+    
+    console.log('➕ [Alimentazione] Aggiunta alimento:', food.name, grams, 'g')
+    
+    const multiplier = grams / 100
+    const newEntry = {
+      id: Date.now(),
+      name: food.name,
+      calories: Math.round((food.calories || 0) * multiplier),
+      pro: Math.round((food.pro || 0) * multiplier * 10) / 10,
+      carb: Math.round((food.carb || 0) * multiplier * 10) / 10,
+      gra: Math.round((food.gra || 0) * multiplier * 10) / 10,
+      fib: Math.round((food.fib || 0) * multiplier * 10) / 10,
+      grams: grams
+    }
+    
+    const newLog = [...dailyLog, newEntry]
+    console.log('📋 [Alimentazione] DailyLog dopo aggiunta:', newLog.length, 'entries')
+    
+    setDailyLog(newLog)
   }
-  
-  console.log('➕ [Alimentazione] Aggiunta alimento:', food.name, grams, 'g')
-  console.log('📋 [Alimentazione] DailyLog prima:', dailyLog.length, 'entries')
-  
-  // Calcola i valori nutrizionali
-  const multiplier = grams / 100
-  const newEntry = {
-    id: Date.now(),
-    name: food.name,
-    calories: Math.round((food.calories || 0) * multiplier),
-    pro: Math.round((food.pro || 0) * multiplier * 10) / 10,
-    carb: Math.round((food.carb || 0) * multiplier * 10) / 10,
-    gra: Math.round((food.gra || 0) * multiplier * 10) / 10,
-    fib: Math.round((food.fib || 0) * multiplier * 10) / 10,
-    grams: grams
-  }
-  
-  // ✅ AGGIUNGI all'array esistente
-  const newLog = [...dailyLog, newEntry]
-  
-  console.log('📋 [Alimentazione] DailyLog dopo:', newLog.length, 'entries')
-  
-  // Imposta il nuovo log (triggera salvataggio automatico)
-  setDailyLog(newLog)
-}
 
   const handleRemoveFromDailyLog = (entryId) => {
-  console.log('🗑 [Alimentazione] Rimozione alimento:', entryId)
-  console.log('📋 [Alimentazione] DailyLog prima:', dailyLog.length, 'entries')
-  
-  // ✅ FILTRA direttamente dallo stato corrente, non da localStorage
-  const newLog = dailyLog.filter(entry => entry.id !== entryId)
-  
-  console.log(' [Alimentazione] DailyLog dopo:', newLog.length, 'entries')
-  console.log(' [Alimentazione] Alimento rimosso. Entries rimasti:', newLog.length)
-  
-  // Aggiorna stato E localStorage
-  setDailyLog(newLog)
-}
+    console.log('🗑 [Alimentazione] Rimozione alimento:', entryId)
+    
+    const newLog = dailyLog.filter(entry => entry.id !== entryId)
+    console.log('📋 [Alimentazione] DailyLog dopo rimozione:', newLog.length, 'entries')
+    
+    setDailyLog(newLog)
+  }
 
+  // ✅ FIX: Ricalcola i macro in proporzione ai nuovi grammi, senza usare foodDatabase
   const handleUpdateGrams = (entryId, newGrams) => {
-    if (newGrams <= 0) { alert('Inserisci una quantità valida!'); return }
-    const newLog = updateFoodGrams(entryId, newGrams)
+    if (newGrams <= 0) { 
+      alert('Inserisci una quantità valida!')
+      return 
+    }
+    
+    console.log('✏️ [Alimentazione] Aggiorno grammi:', entryId, '→', newGrams)
+    
+    const entry = dailyLog.find(e => e.id === entryId)
+    if (!entry) return
+    
+    const oldGrams = entry.grams || 100
+    const ratio = newGrams / oldGrams
+    
+    const newLog = dailyLog.map(e => {
+      if (e.id === entryId) {
+        return {
+          ...e,
+          grams: newGrams,
+          calories: Math.round((e.calories || 0) * ratio),
+          pro: Math.round((e.pro || 0) * ratio * 10) / 10,
+          carb: Math.round((e.carb || 0) * ratio * 10) / 10,
+          gra: Math.round((e.gra || 0) * ratio * 10) / 10,
+          fib: Math.round((e.fib || 0) * ratio * 10) / 10,
+        }
+      }
+      return e
+    })
+    
+    console.log('📋 [Alimentazione] DailyLog dopo modifica:', newLog.length, 'entries')
+    
     setDailyLog(newLog)
     setEditingGrams(null)
   }
