@@ -27,37 +27,50 @@ function Panoramica({ user }) {
 
         // 2. Carica ultimi 7 giorni CONCLUSI (is_active = false)
         const completedLogs = await loadLast7CompletedLogs(user.id)
+        console.log('📊 [Panoramica] Giorni conclusi trovati:', completedLogs.length)
+        
         setDaysCount(completedLogs.length)
         
         if (completedLogs.length > 0) {
-          // Somma i totali di tutti i giorni recuperati
-          const totals = completedLogs.reduce((acc, log) => {
-            const dailyTotals = (log.entries || []).reduce((dayAcc, entry) => ({
-              calories: dayAcc.calories + (entry.calories || 0),
-              pro: dayAcc.pro + (entry.pro || 0),
-              carb: dayAcc.carb + (entry.carb || 0),
-              gra: dayAcc.gra + (entry.gra || 0),
-              fib: dayAcc.fib + (entry.fib || 0),
+          // Calcola i totali per ogni singolo giorno
+          const dailyTotalsArray = completedLogs.map(log => {
+            const totals = (log.entries || []).reduce((acc, entry) => ({
+              calories: acc.calories + (entry.calories || 0),
+              pro: acc.pro + (entry.pro || 0),
+              carb: acc.carb + (entry.carb || 0),
+              gra: acc.gra + (entry.gra || 0),
+              fib: acc.fib + (entry.fib || 0),
             }), { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-
-            return {
-              calories: acc.calories + dailyTotals.calories,
-              pro: acc.pro + dailyTotals.pro,
-              carb: acc.carb + dailyTotals.carb,
-              gra: acc.gra + dailyTotals.gra,
-              fib: acc.fib + dailyTotals.fib,
-            }
-          }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
-
-          // Calcola la media dividendo per il numero effettivo di giorni trovati
-          const count = completedLogs.length
-          setWeeklyAverage({
-            calories: Math.round(totals.calories / count),
-            pro: Math.round((totals.pro / count) * 10) / 10,
-            carb: Math.round((totals.carb / count) * 10) / 10,
-            gra: Math.round((totals.gra / count) * 10) / 10,
-            fib: Math.round((totals.fib / count) * 10) / 10,
+            
+            console.log(`📅 [Panoramica] Giorno ${log.start_date} →`, totals)
+            return totals
           })
+          
+          // Somma tutti i giorni insieme
+          const grandTotal = dailyTotalsArray.reduce((acc, daily) => ({
+            calories: acc.calories + daily.calories,
+            pro: acc.pro + daily.pro,
+            carb: acc.carb + daily.carb,
+            gra: acc.gra + daily.gra,
+            fib: acc.fib + daily.fib,
+          }), { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
+          
+          console.log('📊 [Panoramica] Totale complessivo dei giorni:', grandTotal)
+          
+          // Calcola la media dividendo per il numero di giorni trovati
+          const count = completedLogs.length
+          const average = {
+            calories: Math.round(grandTotal.calories / count),
+            pro: Math.round((grandTotal.pro / count) * 10) / 10,
+            carb: Math.round((grandTotal.carb / count) * 10) / 10,
+            gra: Math.round((grandTotal.gra / count) * 10) / 10,
+            fib: Math.round((grandTotal.fib / count) * 10) / 10,
+          }
+          
+          console.log('📊 [Panoramica] MEDIA FINALE:', average)
+          setWeeklyAverage(average)
+        } else {
+          setWeeklyAverage({ calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
         }
       } catch (err) {
         console.error('Errore sincronizzazione Panoramica:', err)
@@ -69,10 +82,8 @@ function Panoramica({ user }) {
 
   const round1 = (val) => Math.round(val * 10) / 10
 
-  // Calcola differenza per calorie
+  // Calcola differenze
   const calorieDiff = weeklyAverage.calories - targets.calories
-  
-  // Calcola differenze per macro
   const proDiff = round1(weeklyAverage.pro - targets.pro)
   const carbDiff = round1(weeklyAverage.carb - targets.carb)
   const graDiff = round1(weeklyAverage.gra - targets.gra)
@@ -80,23 +91,26 @@ function Panoramica({ user }) {
 
   // Componente per il messaggio di stato
   const StatusMessage = ({ diff, unit, isCalorie = false }) => {
-    if (diff === 0) {
+    // Gestione approssimativa dello zero per i decimali
+    if (Math.abs(diff) < 0.1) {
       return <span className="text-yellow-400 font-bold">🎯 Obiettivo centrato!</span>
     }
     
     if (isCalorie) {
-      // Per calorie: sotto = rosso, sopra = verde
+      // Calorie: sotto = rosso, sopra = verde
       if (diff < 0) {
         return <span className="text-red-400 font-bold">-{Math.abs(Math.round(diff))} {unit}</span>
       } else {
         return <span className="text-green-400 font-bold">+{Math.round(diff)} {unit}</span>
       }
     } else {
-      // Per macro: logica invertita - sotto = verde (deve salire), sopra = verde (deve scendere)
+      // Macro: logica invertita visivamente per indicare l'azione necessaria
       if (diff < 0) {
-        return <span className="text-green-400 font-bold">+{Math.abs(diff)} {unit}</span>
+        // Es: media 145, target 156, diff = -11. Mostra "+11g" in verde (devi salire)
+        return <span className="text-green-400 font-bold">+{Math.abs(Math.round(diff))} {unit}</span>
       } else {
-        return <span className="text-green-400 font-bold">-{diff} {unit}</span>
+        // Es: media 165, target 156, diff = +9. Mostra "-9g" in verde (devi scendere)
+        return <span className="text-green-400 font-bold">-{Math.round(diff)} {unit}</span>
       }
     }
   }
@@ -132,8 +146,7 @@ function Panoramica({ user }) {
             </div>
           </div>
           
-          {/* Messaggio di stato per calorie */}
-          <div className="text-center">
+          <div className="text-center mt-2">
             {daysCount > 0 ? (
               <StatusMessage diff={calorieDiff} unit="kcal" isCalorie={true} />
             ) : (
