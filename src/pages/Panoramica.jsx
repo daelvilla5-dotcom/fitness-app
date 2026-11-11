@@ -82,48 +82,46 @@ function Panoramica({ user }) {
 
   const round1 = (val) => Math.round(val * 10) / 10
 
-  // Calcola differenze
+  // Calcola differenze (media - obiettivo)
   const calorieDiff = weeklyAverage.calories - targets.calories
   const proDiff = round1(weeklyAverage.pro - targets.pro)
   const carbDiff = round1(weeklyAverage.carb - targets.carb)
   const graDiff = round1(weeklyAverage.gra - targets.gra)
   const fibDiff = round1(weeklyAverage.fib - targets.fib)
 
-  // Componente per il messaggio di stato
-  const StatusMessage = ({ diff, unit, isCalorie = false }) => {
-    // Gestione approssimativa dello zero per i decimali
+  // ✅ Componente per il messaggio di stato (logica UNIFICATA: + verde, - rosso)
+  const StatusMessage = ({ diff, unit }) => {
     if (Math.abs(diff) < 0.1) {
       return <span className="text-yellow-400 font-bold">🎯 Obiettivo centrato!</span>
     }
     
-    if (isCalorie) {
-      // Calorie: sotto = rosso, sopra = verde
-      if (diff < 0) {
-        return <span className="text-red-400 font-bold">-{Math.abs(Math.round(diff))} {unit}</span>
-      } else {
-        return <span className="text-green-400 font-bold">+{Math.round(diff)} {unit}</span>
-      }
+    if (diff > 0) {
+      // Sopra l'obiettivo → VERDE con segno +
+      return <span className="text-green-400 font-bold">+{round1(diff)} {unit}</span>
     } else {
-      // Macro: logica invertita visivamente per indicare l'azione necessaria
-      if (diff < 0) {
-        // Es: media 145, target 156, diff = -11. Mostra "+11g" in verde (devi salire)
-        return <span className="text-green-400 font-bold">+{Math.abs(Math.round(diff))} {unit}</span>
-      } else {
-        // Es: media 165, target 156, diff = +9. Mostra "-9g" in verde (devi scendere)
-        return <span className="text-green-400 font-bold">-{Math.round(diff)} {unit}</span>
-      }
+      // Sotto l'obiettivo → ROSSO con segno -
+      return <span className="text-red-400 font-bold">-{Math.abs(round1(diff))} {unit}</span>
     }
   }
 
   return (
     <div className="p-4 pb-24">
       <h2 className="text-2xl font-bold text-electric mb-2 mt-2">📊 Panoramica</h2>
-      <p className="text-sm text-gray-400 mb-6">
-        {daysCount > 0 
-          ? `Media degli ultimi ${daysCount} giorn${daysCount === 1 ? 'o' : 'i'} conclusi` 
-          : 'Completa almeno un giorno per vedere la media'}
-      </p>
+      
+      <div className="flex items-center gap-2 mb-6">
+        <p className="text-sm text-gray-400">
+          {daysCount > 0 
+            ? `Media degli ultimi ${daysCount} giorn${daysCount === 1 ? 'o' : 'i'} conclusi` 
+            : 'Completa almeno un giorno per vedere la media'}
+        </p>
+        {daysCount > 0 && daysCount < 7 && (
+          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/30">
+            ⚠️ Servono 7 giorni per la media settimanale completa
+          </span>
+        )}
+      </div>
 
+      {/* Grafico a ciambella - Calorie */}
       <div className="bg-card border border-border rounded-lg p-6 mb-4">
         <h3 className="text-lg font-semibold text-white mb-6 text-center">Calorie Medie</h3>
         
@@ -148,7 +146,7 @@ function Panoramica({ user }) {
           
           <div className="text-center mt-2">
             {daysCount > 0 ? (
-              <StatusMessage diff={calorieDiff} unit="kcal" isCalorie={true} />
+              <StatusMessage diff={calorieDiff} unit="kcal" />
             ) : (
               <p className="text-gray-400 text-sm">Nessun dato disponibile</p>
             )}
@@ -156,6 +154,7 @@ function Panoramica({ user }) {
         </div>
       </div>
 
+      {/* Grafici a barre - Macro Nutrienti */}
       <div className="bg-card border border-border rounded-lg p-4">
         <h3 className="text-lg font-semibold text-white mb-4">Macro Nutrienti Medi</h3>
         <div className="space-y-4">
@@ -168,12 +167,13 @@ function Panoramica({ user }) {
             <div key={macro.name}>
               <div className="flex justify-between items-center mb-1">
                 <span className="text-sm font-medium text-white">{macro.name}</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  {/* Mostra solo la media, senza "/ obiettivo" */}
                   <span className="text-sm text-gray-400">
-                    {round1(macro.current)}g / {macro.target}g
+                    {round1(macro.current)}g
                   </span>
                   {daysCount > 0 && (
-                    <StatusMessage diff={macro.diff} unit="g" isCalorie={false} />
+                    <StatusMessage diff={macro.diff} unit="g" />
                   )}
                 </div>
               </div>
