@@ -443,21 +443,34 @@ export async function loadDailyLogsHistory(userId) {
   }
 }
 
-// ✅ FUNZIONE PER LA MEDIA DEGLI ULTIMI 7 GIORNI CONCLUSI
+// ✅ Carica gli ultimi 7 daily_log CONCLUSI con DATE DIVERSE
 export async function loadLast7CompletedLogs(userId) {
   try {
-    const { data, error } = await supabase
+    // Prima prendiamo tutti i giorni conclusi
+    const { data: allLogs, error } = await supabase
       .from('daily_logs')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_active', false) // Prende SOLO i giorni chiusi
-      .order('start_date', { ascending: false }) // Dal più recente
-      .limit(7)
+      .eq('is_active', false)
+      .order('start_date', { ascending: false })
 
     if (error) throw error
     
-    console.log('📊 [DB] Trovati', data?.length || 0, 'giorni conclusi')
-    return data || []
+    // Filtriamo per avere solo date uniche (una per giorno)
+    const uniqueDates = new Set()
+    const uniqueLogs = []
+    
+    for (const log of allLogs) {
+      const dateKey = log.start_date.split('T')[0] // Prende solo la data (YYYY-MM-DD)
+      if (!uniqueDates.has(dateKey)) {
+        uniqueDates.add(dateKey)
+        uniqueLogs.push(log)
+        if (uniqueLogs.length === 7) break
+      }
+    }
+    
+    console.log('📊 [DB] Trovati', uniqueLogs.length, 'giorni conclusi con date uniche (su', allLogs?.length || 0, 'totali)')
+    return uniqueLogs
   } catch (err) {
     console.error('Errore caricamento ultimi 7 log conclusi:', err)
     return []
