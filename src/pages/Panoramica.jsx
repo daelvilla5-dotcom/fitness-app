@@ -18,21 +18,18 @@ function Panoramica({ user }) {
 
     const loadData = async () => {
       try {
-        // 1. Carica target
         const dbTargets = await loadTargetsDB(user.id)
         if (dbTargets && dbTargets.calories > 0) {
           setTargets(dbTargets)
           localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
         }
 
-        // 2. Carica ultimi 7 giorni CONCLUSI (is_active = false)
         const completedLogs = await loadLast7CompletedLogs(user.id)
         console.log('📊 [Panoramica] Giorni conclusi trovati:', completedLogs.length)
         
         setDaysCount(completedLogs.length)
         
         if (completedLogs.length > 0) {
-          // Calcola i totali per ogni singolo giorno
           const dailyTotalsArray = completedLogs.map(log => {
             const totals = (log.entries || []).reduce((acc, entry) => ({
               calories: acc.calories + (entry.calories || 0),
@@ -46,7 +43,6 @@ function Panoramica({ user }) {
             return totals
           })
           
-          // Somma tutti i giorni insieme
           const grandTotal = dailyTotalsArray.reduce((acc, daily) => ({
             calories: acc.calories + daily.calories,
             pro: acc.pro + daily.pro,
@@ -57,7 +53,6 @@ function Panoramica({ user }) {
           
           console.log('📊 [Panoramica] Totale complessivo dei giorni:', grandTotal)
           
-          // Calcola la media dividendo per il numero di giorni trovati
           const count = completedLogs.length
           const average = {
             calories: Math.round(grandTotal.calories / count),
@@ -89,20 +84,28 @@ function Panoramica({ user }) {
   const graDiff = round1(weeklyAverage.gra - targets.gra)
   const fibDiff = round1(weeklyAverage.fib - targets.fib)
 
-  // ✅ Componente per il messaggio di stato (logica UNIFICATA: + verde, - rosso)
+  // ✅ Determina il colore della ciambella in base alla differenza calorica
+  const getDonutColor = () => {
+    const absDiff = Math.abs(calorieDiff)
+    if (absDiff <= 25) return '#00BFFF' // Blu elettrico (entro ±25 kcal)
+    if (calorieDiff < 0) return '#FF6B6B' // Rosso (sotto obiettivo)
+    return '#4ECDC4' // Verde (sopra obiettivo)
+  }
+
+  // ✅ Componente StatusMessage: solo icona 🎯 quando centrato, altrimenti +/- con colore
   const StatusMessage = ({ diff, unit }) => {
     if (Math.abs(diff) < 0.1) {
-      return <span className="text-yellow-400 font-bold">🎯 Obiettivo centrato!</span>
+      return <span>🎯</span>
     }
     
     if (diff > 0) {
-      // Sopra l'obiettivo → VERDE con segno +
       return <span className="text-green-400 font-bold">+{round1(diff)} {unit}</span>
     } else {
-      // Sotto l'obiettivo → ROSSO con segno -
       return <span className="text-red-400 font-bold">-{Math.abs(round1(diff))} {unit}</span>
     }
   }
+
+  const donutColor = getDonutColor()
 
   return (
     <div className="p-4 pb-24">
@@ -132,7 +135,7 @@ function Panoramica({ user }) {
               <path 
                 d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
                 fill="none" 
-                stroke="#00BFFF" 
+                stroke={donutColor}
                 strokeWidth="3" 
                 strokeDasharray={`${Math.min((weeklyAverage.calories / targets.calories) * 100, 100)}, 100`} 
                 className="transition-all duration-500" 
@@ -168,9 +171,9 @@ function Panoramica({ user }) {
               <div className="flex justify-between items-center mb-1">
                 <span className="text-sm font-medium text-white">{macro.name}</span>
                 <div className="flex items-center gap-3">
-                  {/* Mostra solo la media, senza "/ obiettivo" */}
+                  {/* Mostra media / obiettivo */}
                   <span className="text-sm text-gray-400">
-                    {round1(macro.current)}g
+                    {round1(macro.current)}g / {macro.target}g
                   </span>
                   {daysCount > 0 && (
                     <StatusMessage diff={macro.diff} unit="g" />
