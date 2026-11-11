@@ -5,20 +5,20 @@ import {
   updateRoutine as updateRoutineDB,
   deleteRoutine as deleteRoutineDB,
   getOrCreateShareCode,
-  loadExercises
+  loadExercises,
+  loadWorkoutLogs as loadWorkoutLogsDB
 } from '../utils/supabaseData'
 
 function RoutineBuilder({ user, onStartWorkout }) {
   const [routines, setRoutines] = useState([])
   const [exercises, setExercises] = useState([])
+  const [allWorkoutLogs, setAllWorkoutLogs] = useState([]) // ✅ Nuovo stato per lo storico
   const [activeRoutine, setActiveRoutine] = useState(null)
   const [newRoutineName, setNewRoutineName] = useState('')
   const [editingDayId, setEditingDayId] = useState(null)
   const [editingDayName, setEditingDayName] = useState('')
   
-  // Stato per i select controllati (uno per ogni giorno)
   const [selectedExerciseIds, setSelectedExerciseIds] = useState({})
-  
   const [shareModalOpen, setShareModalOpen] = useState(false)
   const [shareLink, setShareLink] = useState('')
   const [sharingRoutine, setSharingRoutine] = useState(null)
@@ -26,7 +26,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
   useEffect(() => {
     if (user) {
       loadExercises(user.id).then(dbExercises => {
-        console.log('📋 Esercizi caricati da Supabase:', dbExercises.length)
         if (dbExercises.length > 0) {
           setExercises(dbExercises)
         } else {
@@ -38,8 +37,31 @@ function RoutineBuilder({ user, onStartWorkout }) {
       loadRoutinesDB(user.id).then(dbRoutines => {
         setRoutines(dbRoutines)
       }).catch(err => console.error('Errore caricamento schede:', err))
+
+      // ✅ Carica anche lo storico per mostrare gli ultimi dati
+      loadWorkoutLogsDB(user.id).then(logs => {
+        setAllWorkoutLogs(logs)
+      }).catch(err => console.error('Errore caricamento storico:', err))
     }
   }, [user])
+
+  // ✅ Funzione helper per trovare l'ultimo dato di un esercizio
+  const getLastExerciseLog = (exerciseId, exerciseName) => {
+    const allExercises = allWorkoutLogs.flatMap(log => 
+      (log.exercises || []).map(ex => ({
+        ...ex,
+        date: log.date
+      }))
+    )
+    
+    const matching = allExercises.filter(ex => 
+      (exerciseId && ex.exerciseId === exerciseId) || (!exerciseId && ex.name === exerciseName)
+    )
+    
+    if (matching.length === 0) return null
+    matching.sort((a, b) => new Date(b.date) - new Date(a.date))
+    return matching[0]
+  }
 
   const createRoutine = async () => {
     if (!newRoutineName || !user) return
@@ -157,8 +179,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
     
     newDays[dayIndex] = currentDay
     updateActiveRoutine({ ...activeRoutine, days: newDays })
-    
-    // Resetta il select per questo giorno
     setSelectedExerciseIds(prev => ({ ...prev, [dayIndex]: '' }))
   }
 
@@ -167,10 +187,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
     const currentDay = { ...newDays[dayIndex] }
     const currentExercises = [...currentDay.exercises]
     
-    currentExercises[exIndex] = {
-      ...currentExercises[exIndex],
-      [field]: value
-    }
+    currentExercises[exIndex] = { ...currentExercises[exIndex], [field]: value }
     
     currentDay.exercises = currentExercises
     newDays[dayIndex] = currentDay
@@ -185,10 +202,8 @@ function RoutineBuilder({ user, onStartWorkout }) {
     updateActiveRoutine({ ...activeRoutine, days: newDays })
   }
 
-  // Handler per il cambio del select
   const handleExerciseSelect = (dayIndex, exerciseId) => {
     if (!exerciseId) return
-    
     const ex = exercises.find(ex => ex.id === exerciseId)
     if (ex) {
       addExerciseToDay(dayIndex, ex)
@@ -272,52 +287,66 @@ function RoutineBuilder({ user, onStartWorkout }) {
                 </div>
               </div>
 
-              {/* Lista esercizi del giorno */}
               <div className="space-y-3 mb-3">
-                {day.exercises.map((ex, exIndex) => (
-                  <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-white font-semibold">{ex.name}</span>
-                      <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
+                {day.exercises.map((ex, exIndex) => {
+                  // ✅ Trova l'ultimo log per mostrare un'anteprima
+                  const lastLog = getLastExerciseLog(ex.exerciseId, ex.name)
+                  const lastSet = lastLog?.sets?.[0] // Prende la prima serie come riferimento rapido
+
+                  return (
+                    <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <span className="text-white font-semibold block">{ex.name}</span>
+                          {/* ✅ Pillola con ultimo dato registrato */}
+                          {lastSet && (lastSet.weight || lastSet.reps) ? (
+                            <span className="text-[10px] bg-electric/20 text-electric px-2 py-0.5 rounded mt-1 inline-block">
+                              Ultimo: {lastSet.weight || '-'}kg × {lastSet.reps || '-'} reps
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-gray-500 mt-1 inline-block">Nessuno storico</span>
+                          )}
+                        </div>
+                        <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-xs text-gray-400">Serie</label>
+                          <input 
+                            type="number" 
+                            value={ex.targetSets || 3} 
+                            onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} 
+                            className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                            placeholder="3"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400">Reps (es. 5-9)</label>
+                          <input 
+                            type="text" 
+                            value={ex.targetReps || '8-12'} 
+                            onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} 
+                            className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                            placeholder="8-12"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-400">Riposo</label>
+                          <input 
+                            type="text" 
+                            value={ex.restTime || '1\'30"'} 
+                            onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'restTime', e.target.value)} 
+                            className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
+                            placeholder="1'30&quot;"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    {/* Campi Serie, Reps, Riposo */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-xs text-gray-400">Serie</label>
-                        <input 
-                          type="number" 
-                          value={ex.targetSets || 3} 
-                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} 
-                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
-                          placeholder="3"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">Reps (es. 5-9)</label>
-                        <input 
-                          type="text" 
-                          value={ex.targetReps || '8-12'} 
-                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} 
-                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
-                          placeholder="8-12"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-gray-400">Riposo</label>
-                        <input 
-                          type="text" 
-                          value={ex.restTime || '1\'30"'} 
-                          onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'restTime', e.target.value)} 
-                          className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
-                          placeholder="1'30&quot;"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
-              {/* SELECT CONTROLLATO - Si aggiunge automaticamente al click */}
               <select
                 value={selectedExerciseIds[dayIndex] || ''}
                 onChange={(e) => handleExerciseSelect(dayIndex, e.target.value)}
@@ -335,7 +364,6 @@ function RoutineBuilder({ user, onStartWorkout }) {
         </>
       )}
 
-      {/* Modal Condivisione */}
       {shareModalOpen && sharingRoutine && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-card border border-border rounded-lg p-6 max-w-md w-full">
