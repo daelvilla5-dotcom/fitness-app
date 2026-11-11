@@ -25,7 +25,7 @@ function Panoramica({ user }) {
           localStorage.setItem('fitness_app_targets', JSON.stringify(dbTargets))
         }
 
-        // 2. Carica ultimi 7 giorni conclusi
+        // 2. Carica ultimi 7 giorni CONCLUSI (is_active = false)
         const completedLogs = await loadLast7CompletedLogs(user.id)
         setDaysCount(completedLogs.length)
         
@@ -49,7 +49,7 @@ function Panoramica({ user }) {
             }
           }, { calories: 0, pro: 0, carb: 0, gra: 0, fib: 0 })
 
-          // Calcola la media dividendo per il numero effettivo di giorni trovati (1-7)
+          // Calcola la media dividendo per il numero effettivo di giorni trovati
           const count = completedLogs.length
           setWeeklyAverage({
             calories: Math.round(totals.calories / count),
@@ -68,7 +68,38 @@ function Panoramica({ user }) {
   }, [user])
 
   const round1 = (val) => Math.round(val * 10) / 10
-  const remainingCalories = targets.calories - weeklyAverage.calories
+
+  // Calcola differenza per calorie
+  const calorieDiff = weeklyAverage.calories - targets.calories
+  
+  // Calcola differenze per macro
+  const proDiff = round1(weeklyAverage.pro - targets.pro)
+  const carbDiff = round1(weeklyAverage.carb - targets.carb)
+  const graDiff = round1(weeklyAverage.gra - targets.gra)
+  const fibDiff = round1(weeklyAverage.fib - targets.fib)
+
+  // Componente per il messaggio di stato
+  const StatusMessage = ({ diff, unit, isCalorie = false }) => {
+    if (diff === 0) {
+      return <span className="text-yellow-400 font-bold">🎯 Obiettivo centrato!</span>
+    }
+    
+    if (isCalorie) {
+      // Per calorie: sotto = rosso, sopra = verde
+      if (diff < 0) {
+        return <span className="text-red-400 font-bold">-{Math.abs(Math.round(diff))} {unit}</span>
+      } else {
+        return <span className="text-green-400 font-bold">+{Math.round(diff)} {unit}</span>
+      }
+    } else {
+      // Per macro: logica invertita - sotto = verde (deve salire), sopra = verde (deve scendere)
+      if (diff < 0) {
+        return <span className="text-green-400 font-bold">+{Math.abs(diff)} {unit}</span>
+      } else {
+        return <span className="text-green-400 font-bold">-{diff} {unit}</span>
+      }
+    }
+  }
 
   return (
     <div className="p-4 pb-24">
@@ -100,11 +131,15 @@ function Panoramica({ user }) {
               <p className="text-lg text-gray-400">/ {targets.calories} kcal</p>
             </div>
           </div>
-          <p className="text-sm text-gray-400 text-center">
-            {remainingCalories > 0 
-              ? `${Math.round(remainingCalories)} kcal medie rimanenti` 
-              : `${Math.round(Math.abs(remainingCalories))} kcal medie in eccesso`}
-          </p>
+          
+          {/* Messaggio di stato per calorie */}
+          <div className="text-center">
+            {daysCount > 0 ? (
+              <StatusMessage diff={calorieDiff} unit="kcal" isCalorie={true} />
+            ) : (
+              <p className="text-gray-400 text-sm">Nessun dato disponibile</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -112,15 +147,22 @@ function Panoramica({ user }) {
         <h3 className="text-lg font-semibold text-white mb-4">Macro Nutrienti Medi</h3>
         <div className="space-y-4">
           {[
-            { name: 'Pro', current: weeklyAverage.pro, target: targets.pro, color: '#00BFFF' },
-            { name: 'Carbo', current: weeklyAverage.carb, target: targets.carb, color: '#4ECDC4' },
-            { name: 'Grassi', current: weeklyAverage.gra, target: targets.gra, color: '#FF6B6B' },
-            { name: 'Fibre', current: weeklyAverage.fib, target: targets.fib, color: '#95E1D3' },
+            { name: 'Pro', current: weeklyAverage.pro, target: targets.pro, diff: proDiff, color: '#00BFFF' },
+            { name: 'Carbo', current: weeklyAverage.carb, target: targets.carb, diff: carbDiff, color: '#4ECDC4' },
+            { name: 'Grassi', current: weeklyAverage.gra, target: targets.gra, diff: graDiff, color: '#FF6B6B' },
+            { name: 'Fibre', current: weeklyAverage.fib, target: targets.fib, diff: fibDiff, color: '#95E1D3' },
           ].map((macro) => (
             <div key={macro.name}>
-              <div className="flex justify-between mb-1">
+              <div className="flex justify-between items-center mb-1">
                 <span className="text-sm font-medium text-white">{macro.name}</span>
-                <span className="text-sm text-gray-400">{round1(macro.current)}g / {macro.target}g</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">
+                    {round1(macro.current)}g / {macro.target}g
+                  </span>
+                  {daysCount > 0 && (
+                    <StatusMessage diff={macro.diff} unit="g" isCalorie={false} />
+                  )}
+                </div>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
