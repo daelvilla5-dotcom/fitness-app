@@ -8,7 +8,6 @@ import {
 } from '../utils/userData'
 import BodyFigure from '../components/BodyFigure'
 import MeasurementInput from '../components/MeasurementInput'
-import MeasurementChart from '../components/MeasurementChart'
 import DataBackup from '../components/DataBackup'
 import { supabase } from '../supabaseClient'
 import { 
@@ -38,13 +37,24 @@ function Dati({ user }) {
   const [showMeasurementInput, setShowMeasurementInput] = useState(false)
   const [editingMeasurement, setEditingMeasurement] = useState(null)
 
-  // useEffect principale che carica TUTTI i dati (profilo, pesate, misure) ogni volta che cambi tab
+  // ✅ MAPPING UNIFICATO: Chiave Database (snake_case) -> Nome Visualizzato
+  const measurementLabels = {
+    braccio_destro: 'Braccio DX',
+    braccio_sinistro: 'Braccio SX',
+    torace: 'Torace',
+    vita: 'Vita',
+    glutei: 'Glutei',
+    coscia_destra: 'Coscia DX',
+    coscia_sinistra: 'Coscia SX',
+    polpaccio_destro: 'Polpaccio DX',
+    polpaccio_sinistro: 'Polpaccio SX',
+  }
+
   useEffect(() => {
     if (!user) return
 
     const loadAllData = async () => {
       if (!navigator.onLine) {
-        console.log(' Offline: carica dati da localStorage')
         const savedProfile = getUserProfile()
         if (savedProfile) setProfile(savedProfile)
         setWeightLog(getWeightLog() || [])
@@ -53,7 +63,6 @@ function Dati({ user }) {
       }
       
       try {
-        // 1. CARICA PROFILO DA SUPABASE (sempre, anche se array vuoto)
         const dbProfile = await loadUserProfileDB(user.id)
         if (dbProfile) {
           const p = { 
@@ -65,24 +74,20 @@ function Dati({ user }) {
           setProfile(p)
           localStorage.setItem('fitness_app_user_profile', JSON.stringify(p))
         } else {
-          // Fallback al locale se non c'è su Supabase
           const localProfile = getUserProfile()
           if (localProfile) setProfile(localProfile)
         }
 
-        // 2. CARICA PESATE DA SUPABASE
         const dbWeights = await loadWeightLogsDB(user.id)
         setWeightLog(dbWeights || [])
         localStorage.setItem('fitness_app_weight_log', JSON.stringify(dbWeights || []))
 
-        // 3. CARICA MISURE DA SUPABASE
         const dbMeasurements = await loadMeasurementsDB(user.id)
         setMeasurements(dbMeasurements || [])
         localStorage.setItem('fitness_app_measurements', JSON.stringify(dbMeasurements || []))
         
       } catch (err) {
         console.error('Errore caricamento da Supabase:', err)
-        // Solo in caso di errore reale, usa il fallback locale
         const localProfile = getUserProfile()
         if (localProfile) setProfile(localProfile)
         setWeightLog(getWeightLog() || [])
@@ -91,7 +96,7 @@ function Dati({ user }) {
     }
 
     loadAllData()
-  }, [user, activeTab]) // ← RICARICA ogni volta che cambi tab!
+  }, [user, activeTab])
 
   const averageWeight = (() => {
     if (!weightLog || weightLog.length === 0) return null
@@ -138,14 +143,11 @@ function Dati({ user }) {
 
   const handleDeleteWeight = async (entryId) => {
     if (!confirm('Eliminare questa pesata?')) return
-    
     try {
       await deleteWeightLogDB(entryId)
-      console.log('✅ Pesata eliminata da Supabase')
     } catch (err) {
       console.log('Pesata eliminata solo da locale')
     }
-    
     const updatedLog = weightLog.filter(entry => entry.id !== entryId)
     setWeightLog(updatedLog)
     localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
@@ -166,7 +168,6 @@ function Dati({ user }) {
         .from('weight_logs')
         .update({ weight: newWeight })
         .eq('id', entryId)
-      
       if (error) throw error
       
       const updatedLog = weightLog.map(entry => 
@@ -174,7 +175,6 @@ function Dati({ user }) {
       )
       setWeightLog(updatedLog)
       localStorage.setItem('fitness_app_weight_log', JSON.stringify(updatedLog))
-      console.log('✅ Pesata aggiornata su Supabase')
     } catch (err) {
       console.error('Errore aggiornamento pesata:', err)
       alert('Errore nell\'aggiornamento della pesata')
@@ -208,27 +208,28 @@ function Dati({ user }) {
 
   const handleSelectArea = (areaId) => {
     setSelectedArea(areaId)
-    setEditingMeasurement({
-      area: areaId,
-      date: new Date().toISOString().split('T')[0],
-      value: '',
-    })
-    setShowMeasurementInput(true)
-  }
-
-  const mapAreaToDb = (area) => {
+    
+    // Mappa l'ID camelCase del componente BodyFigure nel snake_case del database
     const map = {
       braccioDestro: 'braccio_destro', braccioSinistro: 'braccio_sinistro',
       torace: 'torace', vita: 'vita', glutei: 'glutei',
       cosciaDestra: 'coscia_destra', cosciaSinistra: 'coscia_sinistra',
       polpaccioDestro: 'polpaccio_destro', polpaccioSinistro: 'polpaccio_sinistro'
     }
-    return map[area] || area
+    const dbArea = map[areaId] || areaId
+
+    setEditingMeasurement({
+      area: areaId,
+      dbArea: dbArea,
+      date: new Date().toISOString().split('T')[0],
+      value: '',
+    })
+    setShowMeasurementInput(true)
   }
 
   const handleSaveMeasurement = async (data) => {
     const existing = measurements.find(m => m.date === data.date)
-    const dbArea = mapAreaToDb(editingMeasurement.area)
+    const dbArea = editingMeasurement.dbArea
 
     const updatedMeasurement = {
       date: data.date,
@@ -298,30 +299,23 @@ function Dati({ user }) {
   }
 
   const tabs = [
-    { id: 'anagrafica', label: 'Anagrafica', icon: '' },
+    { id: 'anagrafica', label: 'Anagrafica', icon: '👤' },
     { id: 'peso', label: 'Peso', icon: '⚖️' },
     { id: 'misure', label: 'Misure', icon: '📏' },
     { id: 'backup', label: 'Backup', icon: '💾' },
-    { id: 'account', label: 'Account', icon: '' },
+    { id: 'account', label: 'Account', icon: '⚙️' },
   ]
-
-  const areaLabels = {
-    braccioDestro: 'Braccio Destro', braccioSinistro: 'Braccio Sinistro',
-    torace: 'Torace', vita: 'Vita', glutei: 'Glutei',
-    cosciaDestra: 'Coscia Destra', cosciaSinistra: 'Coscia Sinistra',
-    polpaccioDestro: 'Polpaccio Destro', polpaccioSinistro: 'Polpaccio Sinistro',
-  }
 
   return (
     <div className="p-4 pb-24">
       <h2 className="text-2xl font-bold text-electric mb-6 mt-2">📏 Dati Personali</h2>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 py-2 rounded-lg font-semibold text-sm ${
+            className={`flex-shrink-0 px-4 py-2 rounded-lg font-semibold text-sm ${
               activeTab === tab.id ? 'bg-electric text-black' : 'bg-card text-white border border-border'
             }`}
           >
@@ -338,8 +332,8 @@ function Dati({ user }) {
             <div>
               <label className="text-sm text-gray-400 mb-1 block">Genere</label>
               <div className="flex gap-2">
-                <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>M</button>
-                <button onClick={() => setProfile({ ...profile, genere: 'F' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'F' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>F</button>
+                <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>Maschio</button>
+                <button onClick={() => setProfile({ ...profile, genere: 'F' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'F' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>Femmina</button>
               </div>
             </div>
             <div>
@@ -379,7 +373,7 @@ function Dati({ user }) {
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Storico pesate</h3>
             {weightLog.length === 0 ? (
-              <p className="text-gray-400 text-center">Nessuna pesata registrata</p>
+              <p className="text-gray-400 text-center py-4">Nessuna pesata registrata</p>
             ) : (
               <div className="space-y-2">
                 {weightLog.map((entry) => (
@@ -388,7 +382,7 @@ function Dati({ user }) {
                       <p className="text-white font-semibold">{entry.weight} kg</p>
                       <p className="text-xs text-gray-400">{new Date(entry.date).toLocaleDateString('it-IT')}</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-3">
                       <button onClick={() => handleEditWeight(entry.id, entry.weight)} className="text-blue-400 hover:text-blue-300 text-sm" title="Modifica">✎</button>
                       <button onClick={() => handleDeleteWeight(entry.id)} className="text-red-500 hover:text-red-400" title="Elimina">🗑</button>
                     </div>
@@ -406,36 +400,44 @@ function Dati({ user }) {
           <div className="bg-card border border-border rounded-lg p-4">
             <h3 className="text-lg font-semibold text-white mb-3">Sagoma</h3>
             <div className="flex gap-2 mb-4">
-              <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>️ Maschio</button>
+              <button onClick={() => setProfile({ ...profile, genere: 'M' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'M' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>♂️ Maschio</button>
               <button onClick={() => setProfile({ ...profile, genere: 'F' })} className={`flex-1 py-2 rounded-lg font-semibold ${profile.genere === 'F' ? 'bg-electric text-black' : 'bg-gray-800 text-white'}`}>♀️ Femmina</button>
             </div>
             <BodyFigure gender={profile.genere} onSelectArea={handleSelectArea} selectedArea={selectedArea} />
-            <p className="text-xs text-gray-400 text-center mt-3">👆 Clicca su un punto della sagoma per inserire/modificare la misura</p>
+            <p className="text-xs text-gray-400 text-center mt-3">👆 Clicca su un punto della sagoma o sui pulsanti sotto per inserire la misura</p>
           </div>
 
           {measurements.length > 0 && (
             <div className="bg-card border border-border rounded-lg p-4">
               <h3 className="text-lg font-semibold text-white mb-3">Storico completo</h3>
-              <div className="space-y-2">
-                {measurements.slice(0, 10).map((m) => (
-                  <div key={m.id} className="bg-gray-800 rounded-lg p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="text-electric font-semibold text-sm">{new Date(m.date).toLocaleDateString('it-IT')}</p>
-                      <button onClick={() => handleDeleteMeasurement(m.id)} className="text-red-500 text-xs">🗑</button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 text-xs">
-                      {Object.entries(areaLabels).map(([key, label]) => {
-                        if (m[key] === undefined || m[key] === '') return null
-                        return (
-                          <div key={key} className="bg-gray-900 rounded px-2 py-1">
-                            <span className="text-gray-400">{label.split(' ')[0]}:</span>
-                            <span className="text-white ml-1">{m[key]}cm</span>
+              <div className="space-y-3">
+                {measurements.slice(0, 15).map((m) => {
+                  // ✅ FILTRA E MAPPA CORRETTAMENTE: Mostra solo le parti del corpo misurate quel giorno
+                  const activeMeasurements = Object.entries(measurementLabels)
+                    .filter(([dbKey]) => m[dbKey] !== null && m[dbKey] !== undefined && m[dbKey] !== '')
+                    .map(([dbKey, label]) => ({ label, value: m[dbKey] }))
+
+                  if (activeMeasurements.length === 0) return null
+
+                  return (
+                    <div key={m.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                      <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-700">
+                        <p className="text-electric font-bold text-sm">📅 {new Date(m.date).toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                        <button onClick={() => handleDeleteMeasurement(m.id)} className="text-red-400 hover:text-red-300 text-xs bg-red-500/10 px-2 py-1 rounded transition-colors">🗑 Elimina</button>
+                      </div>
+                      
+                      {/* ✅ GRIGLIA A 2 COLONNE: Molto più leggibile su smartphone */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {activeMeasurements.map(({ label, value }) => (
+                          <div key={label} className="bg-gray-900 rounded px-3 py-2 flex justify-between items-center border border-gray-800">
+                            <span className="text-gray-400 text-xs">{label}</span>
+                            <span className="text-white font-semibold text-sm">{value} cm</span>
                           </div>
-                        )
-                      })}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -452,13 +454,13 @@ function Dati({ user }) {
             <h3 className="text-lg font-semibold text-white mb-4">👤 Il tuo account</h3>
             <div className="bg-gray-800 rounded-lg p-4 mb-4">
               <p className="text-sm text-gray-400 mb-1">Email</p>
-              <p className="text-electric font-semibold">{user?.email || 'Non disponibile'}</p>
+              <p className="text-electric font-semibold break-all">{user?.email || 'Non disponibile'}</p>
             </div>
             <div className="bg-gray-800 rounded-lg p-4 mb-4">
               <p className="text-sm text-gray-400 mb-1">Stato</p>
               <p className="text-green-400 font-semibold">✓ Utente approvato</p>
             </div>
-            <div className="bg-red-500/10 border border-red-500 rounded-lg p-4">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
               <p className="text-sm text-gray-400 mb-3">⚠️ Il logout ti riporterà alla schermata di accesso.</p>
               <button onClick={handleLogout} className="w-full bg-red-500 text-white font-bold py-3 rounded-lg hover:bg-red-600 active:scale-95 transition-all">🚪 Esci dall'account</button>
             </div>
@@ -468,11 +470,11 @@ function Dati({ user }) {
 
       {showMeasurementInput && editingMeasurement && (
         <MeasurementInput
-          areaName={areaLabels[editingMeasurement.area] || editingMeasurement.area}
+          areaName={measurementLabels[editingMeasurement.dbArea] || editingMeasurement.area}
           initialValue={editingMeasurement.value}
           initialDate={editingMeasurement.date}
           onSave={handleSaveMeasurement}
-          onClose={() => { setShowMeasurementInput(false); setEditingMeasurement(null) }}
+          onClose={() => { setShowMeasurementInput(false); setEditingMeasurement(null); setSelectedArea(null) }}
         />
       )}
     </div>
