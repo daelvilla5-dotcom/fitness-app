@@ -443,42 +443,21 @@ export async function loadDailyLogsHistory(userId) {
   }
 }
 
-// ✅ Carica gli ultimi 7 daily_log CONCLUSI con DATE DIVERSE
+// ✅ Carica gli ultimi 7 daily_log CONCLUSI (ogni record = un giorno)
 export async function loadLast7CompletedLogs(userId) {
   try {
-    const { data: allLogs, error } = await supabase
+    const { data, error } = await supabase
       .from('daily_logs')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_active', false)
-      .order('start_date', { ascending: false })
+      .eq('is_active', false) // Solo giorni chiusi
+      .order('start_date', { ascending: false }) // Dal più recente
+      .limit(7) // Massimo 7 giorni
 
     if (error) throw error
     
-    // ✅ Filtra solo i giorni che hanno almeno 1 alimento
-    const validLogs = allLogs.filter(log => {
-      const entries = log.entries || []
-      const totalCalories = entries.reduce((sum, entry) => 
-        sum + (entry.calories || 0), 0
-      )
-      return entries.length > 0 && totalCalories > 0
-    })
-    
-    // Prendi solo date uniche
-    const uniqueDates = new Set()
-    const uniqueLogs = []
-    
-    for (const log of validLogs) {
-      const dateKey = log.start_date.split('T')[0]
-      if (!uniqueDates.has(dateKey)) {
-        uniqueDates.add(dateKey)
-        uniqueLogs.push(log)
-        if (uniqueLogs.length === 7) break
-      }
-    }
-    
-    console.log('📊 [DB] Trovati', uniqueLogs.length, 'giorni validi (su', validLogs.length, 'totali)')
-    return uniqueLogs
+    console.log('📊 [DB] Trovati', data?.length || 0, 'giorni conclusi')
+    return data || []
   } catch (err) {
     console.error('Errore caricamento ultimi 7 log conclusi:', err)
     return []
