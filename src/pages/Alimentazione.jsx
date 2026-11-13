@@ -105,38 +105,79 @@ function Alimentazione({ user }) {
   }, [user])
 
   const handleStartNewDay = async () => {
-    if (!user) {
-      alert('Devi essere loggato!')
-      return
-    }
-    
-    if (activeDay && activeDay.isActive) {
-      if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
-      
-      try {
-        console.log('🔒 [Alimentazione] Chiudo giorno:', activeDay.id)
+  if (!user) {
+    alert('Devi essere loggato!')
+    return
+  }
+
+  // 1. Chiudi il giorno corrente SALVANDO esplicitamente le entries attuali
+  if (activeDay && activeDay.isActive) {
+    if (!confirm('Concludere il giorno attuale e iniziarne uno nuovo?')) return
+    try {
+      if (activeDay.id) {
+        // Chiude il record specifico salvando anche gli alimenti del giorno
         await supabase
           .from('daily_logs')
-          .update({ is_active: false, end_date: new Date().toISOString() })
+          .update({ 
+            is_active: false, 
+            end_date: new Date().toISOString(),
+            entries: dailyLog 
+          })
           .eq('id', activeDay.id)
-      } catch (err) {
-        console.error('Errore chiusura giorno:', err)
+      } else {
+        // Fallback: chiude qualsiasi record attivo dell'utente
+        await supabase
+          .from('daily_logs')
+          .update({ 
+            is_active: false, 
+            end_date: new Date().toISOString(),
+            entries: dailyLog 
+          })
+          .eq('user_id', user.id)
+          .eq('is_active', true)
       }
+      console.log('🔒 [Alimentazione] Giorno chiuso con', dailyLog.length, 'entries')
+    } catch (err) {
+      console.error('Errore chiusura giorno:', err)
+      alert('Errore nel chiudere il giorno. Annullato.')
+      return
     }
+  }
 
-    const today = new Date().toISOString().split('T')[0]
+  // 2. Crea il nuovo giorno SU SUPABASE immediatamente (con data di OGGI)
+  const now = new Date().toISOString()
+  try {
+    const { data: newRecord, error } = await supabase
+      .from('daily_logs')
+      .insert({
+        user_id: user.id,
+        start_date: now,
+        end_date: null,
+        is_active: true,
+        entries: []
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
     const newDay = {
-      id: null,
-      startDate: today,
+      id: newRecord.id,
+      startDate: newRecord.start_date,
       endDate: null,
       isActive: true
     }
-    
-    console.log('✅ [Alimentazione] Nuovo giorno creato:', newDay)
-    
+
+    // 3. Aggiorna lo stato: prima il giorno, poi azzera il log
     setActiveDay(newDay)
     setDailyLog([])
+
+    console.log('✅ [Alimentazione] Nuovo giorno creato su Supabase:', newRecord.start_date)
+  } catch (err) {
+    console.error('Errore creazione nuovo giorno:', err)
+    alert('Errore nella creazione del nuovo giorno')
   }
+}
 
   const calcolaFabbisogno = async () => {
     if (!profile || !profile.eta || !profile.altezza) { alert('Completa prima la sezione Dati → Anagrafica!'); return }
