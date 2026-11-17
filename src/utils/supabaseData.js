@@ -121,7 +121,7 @@ export async function loadMeasurements(userId) {
 
 export async function saveMeasurement(userId, measurementData) {
   try {
-    // ✅ Cerca se esiste già una misura per questa data
+    // Cerca se esiste già una misura per questa data
     const { data: existing, error: selectError } = await supabase
       .from('measurements')
       .select('id')
@@ -134,7 +134,7 @@ export async function saveMeasurement(userId, measurementData) {
     if (selectError && selectError.code !== 'PGRST116') throw selectError
 
     if (existing) {
-      // ✅ UPDATE del record esistente
+      // UPDATE del record esistente (senza updated_at)
       const { data, error } = await supabase
         .from('measurements')
         .update({
@@ -146,8 +146,7 @@ export async function saveMeasurement(userId, measurementData) {
           coscia_destra: measurementData.coscia_destra,
           coscia_sinistra: measurementData.coscia_sinistra,
           polpaccio_destro: measurementData.polpaccio_destro,
-          polpaccio_sinistro: measurementData.polpaccio_sinistro,
-          updated_at: new Date().toISOString()
+          polpaccio_sinistro: measurementData.polpaccio_sinistro
         })
         .eq('id', existing.id)
         .select()
@@ -156,7 +155,7 @@ export async function saveMeasurement(userId, measurementData) {
       console.log('✅ Misura aggiornata:', existing.id)
       return data
     } else {
-      // ✅ INSERT nuovo solo se non esiste per questa data
+      // INSERT nuovo solo se non esiste per questa data
       const { data, error } = await supabase
         .from('measurements')
         .insert({
