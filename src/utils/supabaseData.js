@@ -121,21 +121,63 @@ export async function loadMeasurements(userId) {
 
 export async function saveMeasurement(userId, measurementData) {
   try {
-    const { data, error } = await supabase.from('measurements').insert({
-      user_id: userId,
-      date: measurementData.date,
-      braccio_destro: measurementData.braccio_destro || null,
-      braccio_sinistro: measurementData.braccio_sinistro || null,
-      torace: measurementData.torace || null,
-      vita: measurementData.vita || null,
-      glutei: measurementData.glutei || null,
-      coscia_destra: measurementData.coscia_destra || null,
-      coscia_sinistra: measurementData.coscia_sinistra || null,
-      polpaccio_destro: measurementData.polpaccio_destro || null,
-      polpaccio_sinistro: measurementData.polpaccio_sinistro || null
-    }).select().single()
-    if (error) throw error
-    return data
+    // ✅ Cerca se esiste già una misura per questa data
+    const { data: existing, error: selectError } = await supabase
+      .from('measurements')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', measurementData.date)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (selectError && selectError.code !== 'PGRST116') throw selectError
+
+    if (existing) {
+      // ✅ UPDATE del record esistente
+      const { data, error } = await supabase
+        .from('measurements')
+        .update({
+          braccio_destro: measurementData.braccio_destro,
+          braccio_sinistro: measurementData.braccio_sinistro,
+          torace: measurementData.torace,
+          vita: measurementData.vita,
+          glutei: measurementData.glutei,
+          coscia_destra: measurementData.coscia_destra,
+          coscia_sinistra: measurementData.coscia_sinistra,
+          polpaccio_destro: measurementData.polpaccio_destro,
+          polpaccio_sinistro: measurementData.polpaccio_sinistro,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (error) throw error
+      console.log('✅ Misura aggiornata:', existing.id)
+      return data
+    } else {
+      // ✅ INSERT nuovo solo se non esiste per questa data
+      const { data, error } = await supabase
+        .from('measurements')
+        .insert({
+          user_id: userId,
+          date: measurementData.date,
+          braccio_destro: measurementData.braccio_destro || null,
+          braccio_sinistro: measurementData.braccio_sinistro || null,
+          torace: measurementData.torace || null,
+          vita: measurementData.vita || null,
+          glutei: measurementData.glutei || null,
+          coscia_destra: measurementData.coscia_destra || null,
+          coscia_sinistra: measurementData.coscia_sinistra || null,
+          polpaccio_destro: measurementData.polpaccio_destro || null,
+          polpaccio_sinistro: measurementData.polpaccio_sinistro || null
+        })
+        .select()
+        .single()
+      if (error) throw error
+      console.log('➕ Misura creata:', data.id)
+      return data
+    }
   } catch (err) {
     console.error('Errore salvataggio misura:', err)
     throw err

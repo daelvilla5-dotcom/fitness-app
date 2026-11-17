@@ -228,52 +228,50 @@ function Dati({ user }) {
   }
 
   const handleSaveMeasurement = async (data) => {
-    const existing = measurements.find(m => m.date === data.date)
-    const dbArea = editingMeasurement.dbArea
+  const existing = measurements.find(m => m.date === data.date)
+  const dbArea = editingMeasurement.dbArea
 
-    const updatedMeasurement = {
-      date: data.date,
-      braccio_destro: existing?.braccio_destro || null,
-      braccio_sinistro: existing?.braccio_sinistro || null,
-      torace: existing?.torace || null,
-      vita: existing?.vita || null,
-      glutei: existing?.glutei || null,
-      coscia_destra: existing?.coscia_destra || null,
-      coscia_sinistra: existing?.coscia_sinistra || null,
-      polpaccio_destro: existing?.polpaccio_destro || null,
-      polpaccio_sinistro: existing?.polpaccio_sinistro || null,
-      [dbArea]: parseFloat(data.value)
-    }
-    
-    if (!navigator.onLine) {
-      addToQueue({ type: 'CREATE_MEASUREMENT', data: updatedMeasurement })
-      let newMeasurementsList = existing 
-        ? measurements.map(m => m.date === data.date ? { ...m, ...updatedMeasurement } : m)
-        : [{ id: `pending_${Date.now()}`, ...updatedMeasurement }, ...measurements]
-      
-      setMeasurements(newMeasurementsList)
-      localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
-      setShowMeasurementInput(false)
-      setEditingMeasurement(null)
-      alert('⚠️ Offline: misura salvata in locale')
-      return
-    }
-    
-    try {
-      const saved = await saveMeasurementDB(user.id, updatedMeasurement)
-      let newMeasurementsList = existing 
-        ? measurements.map(m => m.date === data.date ? { ...m, ...saved } : m)
-        : [saved, ...measurements]
-      
-      setMeasurements(newMeasurementsList)
-      localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
-      setShowMeasurementInput(false)
-      setEditingMeasurement(null)
-    } catch (err) {
-      console.error('Errore salvataggio misura:', err)
-      alert('Errore nel salvataggio della misura')
-    }
+  const updatedMeasurement = {
+    date: data.date,
+    braccio_destro: existing?.braccio_destro || null,
+    braccio_sinistro: existing?.braccio_sinistro || null,
+    torace: existing?.torace || null,
+    vita: existing?.vita || null,
+    glutei: existing?.glutei || null,
+    coscia_destra: existing?.coscia_destra || null,
+    coscia_sinistra: existing?.coscia_sinistra || null,
+    polpaccio_destro: existing?.polpaccio_destro || null,
+    polpaccio_sinistro: existing?.polpaccio_sinistro || null,
+    [dbArea]: parseFloat(data.value)
   }
+  
+  // ✅ Deduplica locale: un solo record per data
+  const deduped = measurements.filter(m => m.date !== data.date)
+  
+  if (!navigator.onLine) {
+    addToQueue({ type: 'CREATE_MEASUREMENT', data: updatedMeasurement })
+    const pendingRecord = { id: `pending_${Date.now()}`, ...updatedMeasurement }
+    const newMeasurementsList = [pendingRecord, ...deduped]
+    setMeasurements(newMeasurementsList)
+    localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
+    setShowMeasurementInput(false)
+    setEditingMeasurement(null)
+    alert('⚠️ Offline: misura salvata in locale')
+    return
+  }
+  
+  try {
+    const saved = await saveMeasurementDB(user.id, updatedMeasurement)
+    const newMeasurementsList = [saved, ...deduped]
+    setMeasurements(newMeasurementsList)
+    localStorage.setItem('fitness_app_measurements', JSON.stringify(newMeasurementsList))
+    setShowMeasurementInput(false)
+    setEditingMeasurement(null)
+  } catch (err) {
+    console.error('Errore salvataggio misura:', err)
+    alert('Errore nel salvataggio della misura')
+  }
+}
 
   const handleDeleteMeasurement = async (mId) => {
     if (!confirm('Eliminare questa misurazione?')) return
