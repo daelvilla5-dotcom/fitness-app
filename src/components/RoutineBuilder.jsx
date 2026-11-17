@@ -12,7 +12,7 @@ import {
 function RoutineBuilder({ user, onStartWorkout }) {
   const [routines, setRoutines] = useState([])
   const [exercises, setExercises] = useState([])
-  const [allWorkoutLogs, setAllWorkoutLogs] = useState([]) // ✅ Nuovo stato per lo storico
+  const [allWorkoutLogs, setAllWorkoutLogs] = useState([])
   const [activeRoutine, setActiveRoutine] = useState(null)
   const [newRoutineName, setNewRoutineName] = useState('')
   const [editingDayId, setEditingDayId] = useState(null)
@@ -38,14 +38,12 @@ function RoutineBuilder({ user, onStartWorkout }) {
         setRoutines(dbRoutines)
       }).catch(err => console.error('Errore caricamento schede:', err))
 
-      // ✅ Carica anche lo storico per mostrare gli ultimi dati
       loadWorkoutLogsDB(user.id).then(logs => {
         setAllWorkoutLogs(logs)
       }).catch(err => console.error('Errore caricamento storico:', err))
     }
   }, [user])
 
-  // ✅ Funzione helper per trovare l'ultimo dato di un esercizio
   const getLastExerciseLog = (exerciseId, exerciseName) => {
     const allExercises = allWorkoutLogs.flatMap(log => 
       (log.exercises || []).map(ex => ({
@@ -166,14 +164,15 @@ function RoutineBuilder({ user, onStartWorkout }) {
       return
     }
     
+    // ✅ CAMPI VUOTI DI DEFAULT (nessun valore preimpostato)
     currentDay.exercises = [
       ...currentDay.exercises,
       {
         exerciseId: exercise.id,
         name: exercise.name,
-        targetSets: 3,
-        targetReps: '8-12',
-        restTime: '1\'30"'
+        targetSets: '',
+        targetReps: '',
+        restTime: ''
       }
     ]
     
@@ -289,16 +288,14 @@ function RoutineBuilder({ user, onStartWorkout }) {
 
               <div className="space-y-3 mb-3">
                 {day.exercises.map((ex, exIndex) => {
-                  // ✅ Trova l'ultimo log per mostrare un'anteprima
                   const lastLog = getLastExerciseLog(ex.exerciseId, ex.name)
-                  const lastSet = lastLog?.sets?.[0] // Prende la prima serie come riferimento rapido
+                  const lastSet = lastLog?.sets?.[0]
 
                   return (
                     <div key={exIndex} className="bg-gray-800 rounded-lg p-3">
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <span className="text-white font-semibold block">{ex.name}</span>
-                          {/* ✅ Pillola con ultimo dato registrato */}
                           {lastSet && (lastSet.weight || lastSet.reps) ? (
                             <span className="text-[10px] bg-electric/20 text-electric px-2 py-0.5 rounded mt-1 inline-block">
                               Ultimo: {lastSet.weight || '-'}kg × {lastSet.reps || '-'} reps
@@ -310,12 +307,13 @@ function RoutineBuilder({ user, onStartWorkout }) {
                         <button onClick={() => removeExerciseFromDay(dayIndex, exIndex)} className="text-red-500 text-sm">✕</button>
                       </div>
                       
+                      {/* ✅ value con ?? '' (non || default): campi vuoti e cancellabili fino in fondo */}
                       <div className="grid grid-cols-3 gap-2">
                         <div>
                           <label className="text-xs text-gray-400">Serie</label>
                           <input 
                             type="number" 
-                            value={ex.targetSets || 3} 
+                            value={ex.targetSets ?? ''} 
                             onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetSets', e.target.value)} 
                             className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
                             placeholder="3"
@@ -325,7 +323,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
                           <label className="text-xs text-gray-400">Reps (es. 5-9)</label>
                           <input 
                             type="text" 
-                            value={ex.targetReps || '8-12'} 
+                            value={ex.targetReps ?? ''} 
                             onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'targetReps', e.target.value)} 
                             className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
                             placeholder="8-12"
@@ -335,7 +333,7 @@ function RoutineBuilder({ user, onStartWorkout }) {
                           <label className="text-xs text-gray-400">Riposo</label>
                           <input 
                             type="text" 
-                            value={ex.restTime || '1\'30"'} 
+                            value={ex.restTime ?? ''} 
                             onChange={(e) => updateExerciseTarget(dayIndex, exIndex, 'restTime', e.target.value)} 
                             className="w-full bg-gray-900 border border-border text-white rounded px-2 py-1 text-sm" 
                             placeholder="1'30&quot;"
